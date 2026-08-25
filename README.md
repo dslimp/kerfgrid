@@ -7,6 +7,11 @@ uses the same generated G-code for export and simulation. Product invariants
 are documented in `docs/contracts/`; repository workflow rules live in
 `AGENTS.md`.
 
+Normal DXF import preserves source geometry exactly. It does not close gaps,
+drop short or duplicate segments, remove retraces, or simplify paths. Open,
+self-touching, and self-intersecting paths are cut as centerlines with warnings;
+geometry repair is an explicit opt-in operation.
+
 ## Run
 
 Install Python geometry dependencies into the Python used to run the app:
@@ -302,7 +307,7 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
   canvas issue markers for review-required import issues and repaired warnings.
 - DXF open-contour diagnostics include both open-chain endpoints, source/sheet
   coordinates, and chain length so CAD repair work can target the actual break.
-- Open DXF paths are preserved for review; export automatically falls back to
+- Open DXF paths are preserved as ordinary cut geometry; export automatically falls back to
   centerline open cuts with no kerf offset or lead-in/out and keeps the import
   issue visible as a warning.
 - Opt-in DXF small-gap auto-close for import, recorded as a non-blocking repair

@@ -268,8 +268,8 @@ def _path_lead_move(contour: PathContour, options: QtPlasmaCOptions) -> LeadMove
     if not contour.is_closed():
         return _open_path_lead_move(contour, options)
     points = _offset_path_points(contour, options)
-    if len(points) < 3:
-        raise ValueError(f"{contour.name} offset path has fewer than 3 points")
+    if len(points) < 2:
+        raise ValueError(f"{contour.name} path has fewer than 2 points")
     small_feature = _is_small_feature(contour, options)
     diameter = contour_diameter(contour)
     override = _lead_override_for(contour, options)
@@ -419,8 +419,8 @@ def _path_gcode(contour: PathContour, options: QtPlasmaCOptions, skip_segments: 
 
     precision = options.precision
     points = _offset_path_points(contour, options)
-    if len(points) < 3:
-        raise ValueError(f"{contour.name} offset path has fewer than 3 points")
+    if len(points) < 2:
+        raise ValueError(f"{contour.name} path has fewer than 2 points")
 
     small_feature = _is_small_feature(contour, options)
     diameter = contour_diameter(contour)

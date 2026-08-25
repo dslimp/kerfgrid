@@ -129,7 +129,7 @@ LAYER_NAME_HEURISTICS = (
     ("ETCH", "mark"),
     ("BEND", "mark"),
 )
-CHAIN_TOLERANCE_MM = 0.05
+CHAIN_TOLERANCE_MM = 1e-6
 MIN_CONTOUR_AREA_MM2 = 0.01
 TINY_SEGMENT_MM = 0.05
 MICRO_COLLINEAR_OVERLAP_WARN_MM = 0.5
@@ -293,6 +293,7 @@ def import_dxf_circles(
 ) -> dict[str, Any]:
     import_options = import_options if isinstance(import_options, dict) else {}
     resolved_auto_close_gaps = bool(import_options.get("auto_close_gaps", auto_close_gaps))
+    repair_geometry = bool(import_options.get("repair_geometry", False))
     unsafe_entity_policy = _normalize_unsafe_entity_policy(import_options.get("unsafe_entity_policy", "block"))
     include_issue_sheet_points = bool(import_options.get("include_issue_sheet_points", True))
     resolved_layer_mapping = _normalize_layer_mapping(
@@ -304,6 +305,7 @@ def import_dxf_circles(
         content,
         strict=False,
         auto_close_gaps=resolved_auto_close_gaps,
+        repair_geometry=repair_geometry,
         layer_mapping=resolved_layer_mapping,
         unsafe_entity_policy=unsafe_entity_policy,
     )
@@ -367,8 +369,9 @@ def import_dxf_circles(
             "part_count": len(groups),
             "part_names": [group.name for group in groups],
             "review_marker_count": 0,
-            "review_only_part_count": sum(1 for part in parts if part.get("review_only")),
+            "review_only_part_count": 0,
             "auto_close_gaps": bool(resolved_auto_close_gaps),
+            "repair_geometry": repair_geometry,
             "layer_mapping": resolved_layer_mapping,
             "unsafe_entity_policy": unsafe_entity_policy,
             "safe_for_export": has_default_cuttable_part,
@@ -413,6 +416,7 @@ def parse_dxf(
     *,
     strict: bool = True,
     auto_close_gaps: bool = False,
+    repair_geometry: bool = False,
     keep_open_contours: bool = True,
     layer_mapping: dict[str, Any] | None = None,
     unsafe_entity_policy: str = "block",
@@ -444,6 +448,7 @@ def parse_dxf(
         entity_counts=entity_counts,
         issues=issues,
         strict=strict,
+        repair_geometry=repair_geometry,
         transform=DxfTransform.identity(),
         layer_mapping=normalized_layer_mapping,
         unsafe_entity_policy=normalized_unsafe_entity_policy,
@@ -454,14 +459,19 @@ def parse_dxf(
     if strict and issues:
         raise ValueError("; ".join(issue.message for issue in issues))
 
-    repaired_loose_segments = _repair_unordered_segments(loose_segments, issues, LOOSE_SEGMENT_ENTITIES)
+    parsed_loose_segments = (
+        _repair_unordered_segments(loose_segments, issues, LOOSE_SEGMENT_ENTITIES)
+        if repair_geometry
+        else list(loose_segments)
+    )
     contours.extend(
         _chain_segments(
-            repaired_loose_segments,
+            parsed_loose_segments,
             start_index=len(contours) + 1,
             issues=issues,
             strict=strict,
             auto_close_gaps=auto_close_gaps,
+            repair_geometry=repair_geometry,
             keep_open_contours=keep_open_contours,
         )
     )
@@ -479,6 +489,7 @@ def _parse_entity_blocks(
     entity_counts: dict[str, int],
     issues: list[DxfImportIssue],
     strict: bool,
+    repair_geometry: bool,
     transform: DxfTransform,
     layer_mapping: dict[str, str],
     unsafe_entity_policy: str,
@@ -507,42 +518,56 @@ def _parse_entity_blocks(
                 ellipse_segments, closed = _parse_ellipse(block, scale)
                 ellipse_segments = _transform_segments(ellipse_segments, transform)
                 if closed:
-                    _append_path_contour(contours, ellipse_segments, issues, entity_type)
+                    _append_path_contour(
+                        contours, ellipse_segments, issues, entity_type, repair_geometry=repair_geometry
+                    )
                 else:
-                    ellipse_segments = _drop_tiny_segments(ellipse_segments, issues, entity_type)
+                    if repair_geometry:
+                        ellipse_segments = _drop_tiny_segments(ellipse_segments, issues, entity_type)
                     loose_segments.extend(ellipse_segments)
             elif entity_type == "LWPOLYLINE":
                 polyline_segments, closed = _parse_lwpolyline(block, scale)
                 polyline_segments = _transform_segments(polyline_segments, transform)
                 if closed:
-                    _append_path_contour(contours, polyline_segments, issues, entity_type)
+                    _append_path_contour(
+                        contours, polyline_segments, issues, entity_type, repair_geometry=repair_geometry
+                    )
                 else:
-                    polyline_segments = _drop_tiny_segments(polyline_segments, issues, entity_type)
+                    if repair_geometry:
+                        polyline_segments = _drop_tiny_segments(polyline_segments, issues, entity_type)
                     loose_segments.extend(polyline_segments)
             elif entity_type == "POLYLINE":
                 polyline_segments, closed = _parse_polyline(block, scale)
                 polyline_segments = _transform_segments(polyline_segments, transform)
                 if closed:
-                    _append_path_contour(contours, polyline_segments, issues, entity_type)
+                    _append_path_contour(
+                        contours, polyline_segments, issues, entity_type, repair_geometry=repair_geometry
+                    )
                 else:
-                    polyline_segments = _drop_tiny_segments(polyline_segments, issues, entity_type)
+                    if repair_geometry:
+                        polyline_segments = _drop_tiny_segments(polyline_segments, issues, entity_type)
                     loose_segments.extend(polyline_segments)
             elif entity_type == "SPLINE":
                 loose_segments.extend(_transform_segments(_parse_spline(block, scale), transform))
             elif entity_type in ("SOLID", "TRACE"):
                 polygon_segments = _transform_segments(_parse_solid_or_trace(block, scale), transform)
-                _append_path_contour(contours, polygon_segments, issues, entity_type)
+                _append_path_contour(
+                    contours, polygon_segments, issues, entity_type, repair_geometry=repair_geometry
+                )
             elif entity_type == "3DFACE":
                 face_segments = _transform_segments(_parse_3dface(block, scale), transform)
-                _append_path_contour(contours, face_segments, issues, entity_type)
+                _append_path_contour(contours, face_segments, issues, entity_type, repair_geometry=repair_geometry)
             elif entity_type in ("HATCH", "MPOLYGON"):
                 for hatch_segments in _parse_hatch(block, scale):
                     hatch_segments = _transform_segments(hatch_segments, transform)
-                    _append_path_contour(contours, hatch_segments, issues, entity_type)
+                    _append_path_contour(
+                        contours, hatch_segments, issues, entity_type, repair_geometry=repair_geometry
+                    )
             elif entity_type == "REGION":
                 try:
                     region_segments = _parse_region_acis_segments(block, scale, region_acis_data)
-                    region_segments = _drop_tiny_segments(region_segments, issues, entity_type)
+                    if repair_geometry:
+                        region_segments = _drop_tiny_segments(region_segments, issues, entity_type)
                     region_segments = _transform_segments(region_segments, transform)
                     contours.extend(
                         _chain_segments(
@@ -550,6 +575,7 @@ def _parse_entity_blocks(
                             start_index=len(contours) + 1,
                             issues=issues,
                             strict=strict,
+                            repair_geometry=repair_geometry,
                         )
                     )
                 except Exception:
@@ -564,6 +590,7 @@ def _parse_entity_blocks(
                     entity_counts=entity_counts,
                     issues=issues,
                     strict=strict,
+                    repair_geometry=repair_geometry,
                     transform=transform,
                     layer_mapping=layer_mapping,
                     unsafe_entity_policy=unsafe_entity_policy,
@@ -604,6 +631,7 @@ def _expand_insert(
     entity_counts: dict[str, int],
     issues: list[DxfImportIssue],
     strict: bool,
+    repair_geometry: bool,
     transform: DxfTransform,
     layer_mapping: dict[str, str],
     unsafe_entity_policy: str,
@@ -662,6 +690,7 @@ def _expand_insert(
                 entity_counts=entity_counts,
                 issues=issues,
                 strict=strict,
+                repair_geometry=repair_geometry,
                 transform=combined,
                 layer_mapping=layer_mapping,
                 unsafe_entity_policy=unsafe_entity_policy,
@@ -676,9 +705,12 @@ def _append_path_contour(
     segments: list[LineSegment | ArcSegment],
     issues: list[DxfImportIssue],
     entity_type: str,
+    *,
+    repair_geometry: bool,
 ) -> None:
     repair_issues: list[DxfImportIssue] = []
-    segments = _repair_path_segments(segments, repair_issues, entity_type)
+    if repair_geometry:
+        segments = _repair_path_segments(segments, repair_issues, entity_type)
     if not segments:
         return
     contour = PathContour(
@@ -2239,6 +2271,7 @@ def _chain_segments(
     issues: list[DxfImportIssue] | None = None,
     strict: bool = True,
     auto_close_gaps: bool = False,
+    repair_geometry: bool = False,
     keep_open_contours: bool = True,
 ) -> list[PathContour]:
     contours: list[PathContour] = []
@@ -2250,7 +2283,8 @@ def _chain_segments(
     if len(unused) <= GRAPH_CYCLE_EXTRACTION_MAX_SEGMENTS:
         for cycle_indices, cycle in _extract_degree_two_cycles(segments, unused):
             repair_issues: list[DxfImportIssue] = []
-            cycle = _repair_path_segments(cycle, repair_issues, LOOSE_SEGMENT_ENTITIES)
+            if repair_geometry:
+                cycle = _repair_path_segments(cycle, repair_issues, LOOSE_SEGMENT_ENTITIES)
             unused.difference_update(cycle_indices)
             if not cycle:
                 continue
@@ -2311,7 +2345,8 @@ def _chain_segments(
             chain.append(selected.reversed() if reverse else selected)
         else:
             repair_issues: list[DxfImportIssue] = []
-            chain = _repair_path_segments(chain, repair_issues, LOOSE_SEGMENT_ENTITIES)
+            if repair_geometry:
+                chain = _repair_path_segments(chain, repair_issues, LOOSE_SEGMENT_ENTITIES)
             if not chain:
                 continue
             issues.extend(repair_issues)
@@ -2735,8 +2770,6 @@ def _part_from_group(group: DxfPartGroup) -> dict[str, Any]:
         "source_center": {"x": round(center_x, 6), "y": round(center_y, 6)},
         "contours": [_contour_to_json(contour) for contour in group.contours],
     }
-    if any(not _contour_is_closed(contour) or contour.source.startswith("dxf_review") for contour in group.contours):
-        part["review_only"] = True
     _add_legacy_circle_shape(part, group.contours)
     return part
 

@@ -35,7 +35,6 @@ from .application.project_codec import (
     contour_from_json as _contour_from_json,
     contour_preview as _contour_preview,
     effective_spacing_from_project as _effective_spacing_from_project,
-    part_is_review_only as _part_is_review_only,
     placements_from_project as _placements_from_project,
     point_from_json as _point_from_json,
     profile_from_part_json as _profile_from_part_json,
@@ -862,15 +861,13 @@ def import_dxf_project(payload: dict[str, Any]) -> dict[str, Any]:
         **(import_options if isinstance(import_options, dict) else {}),
         **(payload_options if isinstance(payload_options, dict) else {}),
     }
-    auto_close_gaps = bool(merged_import_options.get("auto_close_gaps", True))
-    result = _import_dxf_project_with_options(payload, base, merged_import_options, auto_close_gaps=auto_close_gaps)
-    if not auto_close_gaps and _dxf_import_needs_auto_close_fallback(result):
-        fallback_options = {**merged_import_options, "auto_close_gaps": True}
-        repaired = _import_dxf_project_with_options(payload, base, fallback_options, auto_close_gaps=True)
-        if _dxf_import_fallback_is_better(result, repaired):
-            repaired.setdefault("import", {})["auto_close_fallback_used"] = True
-            return repaired
-    return result
+    auto_close_gaps = bool(merged_import_options.get("auto_close_gaps", False))
+    return _import_dxf_project_with_options(
+        payload,
+        base,
+        merged_import_options,
+        auto_close_gaps=auto_close_gaps,
+    )
 
 
 def _import_dxf_project_with_options(
@@ -891,27 +888,6 @@ def _import_dxf_project_with_options(
         import_options=import_options,
         layer_mapping=payload.get("layer_mapping"),
     )
-
-
-def _dxf_import_needs_auto_close_fallback(result: dict[str, Any]) -> bool:
-    issue_counts = result.get("import", {}).get("issue_counts", {})
-    return any(issue_counts.get(code, 0) for code in ("open_contour", "gap_closure_suggestion"))
-
-
-def _dxf_import_fallback_is_better(original: dict[str, Any], repaired: dict[str, Any]) -> bool:
-    original_import = original.get("import", {})
-    repaired_import = repaired.get("import", {})
-    original_review = int(original_import.get("review_only_part_count", 0) or 0)
-    repaired_review = int(repaired_import.get("review_only_part_count", 0) or 0)
-    if repaired_review < original_review:
-        return True
-    original_open = int(original_import.get("issue_counts", {}).get("open_contour", 0) or 0)
-    repaired_open = int(repaired_import.get("issue_counts", {}).get("open_contour", 0) or 0)
-    if repaired_open < original_open:
-        return True
-    original_parts = int(original_import.get("part_count", len(original.get("parts", []))) or 0)
-    repaired_parts = int(repaired_import.get("part_count", len(repaired.get("parts", []))) or 0)
-    return original_parts > 0 and repaired_parts > 0 and repaired_parts < original_parts
 
 
 def preview_from_project(project: dict[str, Any]) -> dict[str, Any]:
@@ -2516,6 +2492,7 @@ def _is_cam_geometry_error(exc: ValueError) -> bool:
         "Cannot offset",
         "zero-area contour",
         "zero-length segment",
+        "fewer than 3 geometry points",
         "path radius is not positive",
         "self-intersects",
     )
@@ -2528,6 +2505,7 @@ def _is_centerline_fallback_error(exc: ValueError) -> bool:
         "Kerf offset" in message
         or "offset path" in message
         or "path radius is not positive" in message
+        or "fewer than 3 geometry points" in message
         or "Common-line export requires kerf offset disabled" in message
         or "self-intersects" in message
         or "zero area" in message

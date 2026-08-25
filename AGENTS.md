@@ -7,6 +7,8 @@ These rules apply to this repository.
 ## Product Rules
 
 - Imported geometry is operator-owned. Preserve open, self-touching, and self-intersecting paths and cut the visible centerline when compensated geometry cannot be produced.
+- Normal DXF import is read-only with respect to geometry. It must not close gaps, remove duplicate/tiny/retraced segments, simplify paths, or retry with repair enabled.
+- Geometry repair is a separate, explicit operator command. Until that UI exists, the normal browser and FreeCAD flows keep `auto_close_gaps` and `repair_geometry` disabled.
 - Validation findings are warnings. They must be visible in review, simulation, and G-code comments, but must not block export.
 - Simulation is generated from the exact G-code that will be exported.
 - Auto nest must return the best valid layout found before its optimization deadline. The deadline is not a minimum runtime and expiry must not discard a valid seed.

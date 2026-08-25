@@ -17,6 +17,8 @@ Required top-level data:
 - `cut`: material, thickness, nozzle, and feed selection.
 - `post`: QtPlasmaC and toolpath settings.
 - `simulation`: playback and rapid-rate settings.
+- `import_options.auto_close_gaps` and `import_options.repair_geometry` default
+  to `false`; normal import must not enable either option implicitly.
 
 Each contour is either a `circle` or a `path`. A path owns ordered `line` and
 `arc` segments. Open and self-intersecting paths are valid source data and are

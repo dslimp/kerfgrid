@@ -132,7 +132,6 @@ import {
     autoTabMinDiameter: document.getElementById("autoTabMinDiameter"),
     centerlineFallback: document.getElementById("centerlineFallback"),
     openPathCenterline: document.getElementById("openPathCenterline"),
-    importAutoCloseGaps: document.getElementById("importAutoCloseGaps"),
     importUnsafeEntityWarn: document.getElementById("importUnsafeEntityWarn"),
     importLayerMode: document.getElementById("importLayerMode"),
     importLayerMapping: document.getElementById("importLayerMapping"),
@@ -321,13 +320,15 @@ import {
       ...(value.ui || {}),
     };
     value.import_options = {
-      auto_close_gaps: true,
+      auto_close_gaps: false,
+      repair_geometry: false,
       unsafe_entity_policy: "warn",
       layer_mapping_mode: "heuristic",
       layer_mapping: {},
       ...(value.import_options || {}),
     };
     value.import_options.auto_close_gaps = Boolean(value.import_options.auto_close_gaps);
+    value.import_options.repair_geometry = Boolean(value.import_options.repair_geometry);
     value.import_options.unsafe_entity_policy =
       value.import_options.unsafe_entity_policy === "block" ? "block" : "warn";
     value.import_options.layer_mapping_mode = normalizeLayerMappingMode(value.import_options.layer_mapping_mode);
@@ -773,7 +774,6 @@ import {
     controls.autoTabMinDiameter.value = project.post.auto_tab_min_outer_diameter_mm;
     controls.centerlineFallback.checked = project.post.kerf_offset_fallback === "centerline";
     controls.openPathCenterline.checked = project.post.open_path_mode === "centerline";
-    controls.importAutoCloseGaps.checked = Boolean(project.import_options.auto_close_gaps);
     controls.importUnsafeEntityWarn.checked = project.import_options.unsafe_entity_policy === "warn";
     controls.importLayerMode.value = normalizeLayerMappingMode(project.import_options.layer_mapping_mode);
     controls.importLayerMapping.value = formatLayerMapping(project.import_options.layer_mapping);
@@ -842,7 +842,6 @@ import {
     project.post.kerf_offset_fallback = controls.centerlineFallback.checked ? "centerline" : "block";
     project.post.open_path_mode = controls.openPathCenterline.checked ? "centerline" : "block";
     project.ui.tab_length_mm = Number(controls.tabLength.value);
-    project.import_options.auto_close_gaps = Boolean(controls.importAutoCloseGaps.checked);
     project.import_options.unsafe_entity_policy = controls.importUnsafeEntityWarn.checked ? "warn" : "block";
     project.import_options.layer_mapping_mode = normalizeLayerMappingMode(controls.importLayerMode.value);
     const parsedLayerMapping = parseLayerMappingText(controls.importLayerMapping.value);
@@ -1066,14 +1065,6 @@ import {
 
   function partDef(name) {
     return project.parts.find((part) => part.name === name);
-  }
-
-  function openPathCenterlineEnabled() {
-    return String((project && project.post && project.post.open_path_mode) || "centerline") === "centerline";
-  }
-
-  function isProductionPart(part) {
-    return Boolean(part && (!part.review_only || openPathCenterlineEnabled()));
   }
 
   function isDisplayablePart(part) {
@@ -1735,10 +1726,6 @@ import {
     for (const placement of project.placements) {
       const part = partDef(placement.part_name);
       if (!part) continue;
-      if (!isProductionPart(part)) {
-        drawReviewPlacement(part, placement);
-        continue;
-      }
       const key = keyForPlacement(placement);
       const selected = key === selectedKey;
 
@@ -1772,16 +1759,6 @@ import {
       }
       ctx.restore();
     }
-  }
-
-  function drawReviewPlacement(part, placement) {
-    ctx.save();
-    drawPartFill(part, placement, false);
-    for (const contour of partContours(part)) {
-      drawContour(contour, placement, false, { reviewOnly: true });
-    }
-    drawPartImportIssueSegments(part, placement);
-    ctx.restore();
   }
 
   function drawPartFill(part, placement, selected) {
@@ -1847,7 +1824,7 @@ import {
     ctx.fillStyle = "rgba(217, 119, 6, 0.12)";
     for (const placement of project.placements) {
       const part = partDef(placement.part_name);
-      if (!part || part.review_only) continue;
+      if (!part) continue;
       const key = keyForPlacement(placement);
       for (const contour of partContours(part)) {
         const visual = leadVisualForContour(key, contour, placement);
@@ -1992,10 +1969,9 @@ import {
     return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
   }
 
-  function drawContour(contour, placement, selected, options = {}) {
+  function drawContour(contour, placement, selected) {
     const open = isOpenContour(contour);
-    const reviewOnly = Boolean(options.reviewOnly);
-    ctx.lineWidth = reviewOnly ? 1.5 : selected ? 3 : 1.5;
+    ctx.lineWidth = selected ? 3 : 1.5;
     ctx.strokeStyle = contour.kind === "outer" ? (selected ? "#2a80b9" : "#41845c") : "#734b9a";
 
     if (contour.type === "circle") {
@@ -4422,9 +4398,6 @@ import {
           return;
         }
         const uiImportOptions = importPlan.uiImportOptions || project.import_options || {};
-        if (result.import && result.import.auto_close_gaps) {
-          uiImportOptions.auto_close_gaps = true;
-        }
         const imported = normalizeProject({
           ...result,
           import_options: uiImportOptions,

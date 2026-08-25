@@ -17,3 +17,8 @@ Core endpoints:
 Expected operator findings use HTTP 200 and appear as warning objects or G-code
 comments. HTTP 400 is reserved for malformed requests or failures that prevent
 the requested artifact from being constructed at all.
+
+Normal DXF import is non-mutating. `auto_close_gaps` and `repair_geometry`
+default to `false`; repair is only allowed when the caller explicitly enables
+it. Open and invalid paths remain in the project and are exported as source
+centerlines with warnings.

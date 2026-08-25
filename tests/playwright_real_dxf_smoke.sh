@@ -34,7 +34,11 @@ payload_path = Path(sys.argv[2])
 payload = {
     "filename": dxf_path.name,
     "content": dxf_path.read_text(encoding="cp1251", errors="ignore"),
-    "import_options": {"auto_close_gaps": True, "unsafe_entity_policy": "warn"},
+    "import_options": {
+        "auto_close_gaps": False,
+        "repair_geometry": False,
+        "unsafe_entity_policy": "warn",
+    },
     "base_project": {
         "format": "kerfgrid-project",
         "format_version": 1,

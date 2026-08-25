@@ -50,10 +50,6 @@ def requests_from_project(project: dict[str, Any]) -> list[PartRequest]:
     return requests
 
 
-def part_is_review_only(part: dict[str, Any]) -> bool:
-    return bool(part.get("review_only"))
-
-
 def allowed_rotations_from_part(part: dict[str, Any]) -> tuple[float, ...]:
     if part.get("grain_lock"):
         return (0.0,)
@@ -193,7 +189,7 @@ def contour_preview(contour: Contour) -> dict[str, Any]:
     base.update(
         {
             "type": "path",
-            "open": not contour.is_closed(tolerance=0.05),
+            "open": not contour.is_closed(),
             "segments": [segment_preview(segment) for segment in contour.segments],
         }
     )

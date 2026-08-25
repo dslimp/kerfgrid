@@ -16,7 +16,8 @@ from typing import Any, Callable
 DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
 DEFAULT_TIMEOUT_S = 20
 DEFAULT_IMPORT_OPTIONS = {
-    "auto_close_gaps": True,
+    "auto_close_gaps": False,
+    "repair_geometry": False,
     "unsafe_entity_policy": "warn",
 }
 DEFAULT_POST_OPTIONS = {

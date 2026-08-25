@@ -4631,7 +4631,7 @@ LINE
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["contour_count"] == 1
-    assert project["parts"][0]["review_only"] is True
+    assert "review_only" not in project["parts"][0]
     assert project["parts"][0]["source_center"] == {"x": 50.0, "y": 0.0}
     assert project["parts"][0]["source_bbox"] == [0.0, 0.0, 100.0, 0.0]
     assert project["parts"][0]["contours"][0]["open"] is True
@@ -4686,7 +4686,7 @@ LINE
 
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
-    assert project["parts"][0]["review_only"] is True
+    assert "review_only" not in project["parts"][0]
     issues = validate_project(project)
     open_issue = next(issue for issue in issues if issue["code"] == "import_open_contour")
     assert open_issue["blocking"] is False
@@ -4766,8 +4766,7 @@ LINE
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["issue_counts"]["open_contour"] == 1
-    assert any(not part.get("review_only") for part in project["parts"])
-    assert any(part.get("review_only") for part in project["parts"])
+    assert all("review_only" not in part for part in project["parts"])
     gcode = export_project_gcode(project)
     assert "WARNING: import_open_contour" in gcode
     assert "open centerline pierce" in gcode
@@ -4844,7 +4843,7 @@ CONSTRUCTION
     assert_valid_gcode(export_project_gcode(project))
 
 
-def test_dxf_without_displayable_contours_does_not_create_fake_diagnostic_geometry() -> None:
+def test_dxf_tiny_open_segment_is_preserved_and_exported() -> None:
     dxf = dxf_document(
         """0
 LINE
@@ -4867,22 +4866,22 @@ LINE
         }
     )
 
-    assert project["import"]["safe_for_export"] is False
+    assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["review_marker_count"] == 0
     assert project["import"]["review_only_part_count"] == 0
-    assert project["import"]["issue_counts"]["tiny_segment_repaired"] == 1
-    assert project["import"]["issue_counts"]["no_displayable_contours"] == 1
-    assert project["parts"] == []
-    assert project["placements"] == []
+    assert not any(code.endswith("_repaired") for code in project["import"]["issue_counts"])
+    assert len(project["parts"]) == 1
+    assert len(project["placements"]) == 1
+    assert len(project["parts"][0]["contours"][0]["segments"]) == 1
     assert {issue["code"] for issue in validate_project(project)} == {
-        "import_no_displayable_contours",
-        "import_tiny_segment_repaired",
+        "import_gap_closure_suggestion",
+        "import_open_contour",
     }
-    with pytest.raises(ValueError, match="no cuttable placed parts"):
-        export_project_gcode(project)
-    with pytest.raises(ValueError, match="no cuttable placed parts"):
-        simulation_from_project(project)
+    gcode = export_project_gcode(project)
+    assert "G1 X10.01 Y10" in gcode
+    assert any(segment["type"] == "cut" for segment in simulation_from_project(project)["segments"])
+    assert_valid_gcode(gcode)
 
 
 def test_dxf_tiny_segments_inside_closed_lwpolyline_are_preserved() -> None:
@@ -4945,7 +4944,7 @@ def test_dxf_nonclosed_path_contours_are_review_required_warnings(monkeypatch: p
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["issue_counts"]["open_contour"] == 1
-    assert project["parts"][0]["review_only"] is True
+    assert "review_only" not in project["parts"][0]
     assert "import_open_contour" in {issue["code"] for issue in validate_project(project)}
     gcode = export_project_gcode(project)
     assert "WARNING: import_open_contour" in gcode
@@ -5043,7 +5042,7 @@ LINE
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["contour_count"] == 2
     assert project["parts"][0]["contours"][0]["type"] == "path"
-    assert any(part.get("review_only") for part in project["parts"])
+    assert all("review_only" not in part for part in project["parts"])
     issues = validate_project(project)
     assert "import_open_contour" in {issue["code"] for issue in issues}
     assert all(issue.get("blocking") is False for issue in issues)
@@ -5118,6 +5117,7 @@ LINE
             "filename": "gap-marker.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"auto_close_gaps": True},
         }
     )
 
@@ -5143,7 +5143,7 @@ LINE
     assert "WARNING: import_gap_closed_repaired" in gcode
 
 
-def test_dxf_auto_close_gaps_is_default_and_preserves_repair_diagnostics() -> None:
+def test_dxf_auto_close_gaps_is_opt_in_and_preserves_repair_diagnostics() -> None:
     dxf = dxf_document(
         """0
 LWPOLYLINE
@@ -5215,6 +5215,7 @@ LINE
             "filename": "small-gap.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"auto_close_gaps": True},
         }
     )
 
@@ -5236,7 +5237,7 @@ LINE
     assert_valid_gcode(export_project_gcode(repaired))
 
 
-def test_dxf_import_auto_close_fallback_prevents_fragmented_real_job() -> None:
+def test_dxf_import_does_not_retry_with_auto_close_enabled() -> None:
     path = Path("/Users/user/Documents/dxf/models/_extracted/Мангал_2.0/Мангал 2.0.dxf")
     if not path.exists():
         pytest.skip(f"real DXF fixture not found: {path}")
@@ -5251,15 +5252,17 @@ def test_dxf_import_auto_close_fallback_prevents_fragmented_real_job() -> None:
         }
     )
 
-    assert project["import"]["auto_close_gaps"] is True
-    assert project["import"]["auto_close_fallback_used"] is True
-    assert project["import"]["part_count"] == 5
+    assert project["import"]["auto_close_gaps"] is False
+    assert project["import"]["repair_geometry"] is False
+    assert "auto_close_fallback_used" not in project["import"]
+    assert project["import"]["part_count"] == len(project["parts"])
+    assert project["import"]["part_count"] > 0
     assert project["import"]["review_only_part_count"] == 0
-    assert len(project["parts"]) == 5
-    assert len(project["placements"]) == 5
+    assert len(project["placements"]) == len(project["parts"])
+    assert not any(code.endswith("_repaired") for code in project["import"]["issue_counts"])
 
 
-def test_dxf_watch_portable_preserves_review_geometry_without_default_cut_export() -> None:
+def test_dxf_watch_portable_is_preserved_and_cut_without_default_repair() -> None:
     path = Path("/Users/user/Documents/dxf/models/_extracted/часы_portable/часы_portable.dxf")
     if not path.exists():
         pytest.skip(f"real DXF fixture not found: {path}")
@@ -5268,17 +5271,20 @@ def test_dxf_watch_portable_preserves_review_geometry_without_default_cut_export
         {
             "filename": path.name,
             "content": path.read_text(encoding="cp1251", errors="ignore"),
-            "import_options": {"auto_close_gaps": True},
+            "import_options": {"auto_close_gaps": False, "repair_geometry": False},
         }
     )
 
     assert len(project["parts"]) == 1
     assert len(project["placements"]) == 1
-    assert project["parts"][0]["review_only"] is True
+    assert "review_only" not in project["parts"][0]
     assert len(project["parts"][0]["contours"]) >= 78
-    assert project["import"]["issue_counts"]["open_contour"] == 3
+    assert project["import"]["issue_counts"]["open_contour"] >= 3
     assert project["import"]["issue_counts"]["self_intersection"] == 4
-    assert project["import"]["review_only_part_count"] == 1
+    assert project["import"]["review_only_part_count"] == 0
+    assert project["import"]["auto_close_gaps"] is False
+    assert project["import"]["repair_geometry"] is False
+    assert not any(code.endswith("_repaired") for code in project["import"]["issue_counts"])
     preview = preview_from_project(project)
     assert len(preview["parts"]) == 1
     assert preview["parts"][0]["instance_id"] == "часы_portable_1"
@@ -5362,6 +5368,7 @@ LINE
             "filename": "repaired-segments.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"repair_geometry": True},
         }
     )
 
@@ -5441,6 +5448,7 @@ LINE
             "filename": "many-duplicate-issues.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"repair_geometry": True},
         }
     )
 
@@ -5760,6 +5768,7 @@ LWPOLYLINE
             "filename": "backtrack-spur.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"repair_geometry": True},
         }
     )
 
@@ -5821,6 +5830,7 @@ LWPOLYLINE
             "filename": "collinear-retrace-spike.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"repair_geometry": True},
         }
     )
 
@@ -5925,6 +5935,7 @@ LINE
             "filename": "loose-line-retrace.dxf",
             "content": dxf,
             "base_project": example_project(),
+            "import_options": {"repair_geometry": True},
         }
     )
 
@@ -6240,7 +6251,7 @@ LINE
     assert validate_project(project) == []
 
 
-def test_degenerate_closed_lwpolyline_is_ignored_instead_of_exported() -> None:
+def test_degenerate_closed_lwpolyline_is_preserved_and_exported() -> None:
     dxf = dxf_document(
         """0
 LWPOLYLINE
@@ -6290,11 +6301,13 @@ LWPOLYLINE
     )
 
     assert project["import"]["entity_counts"]["LWPOLYLINE"] == 2
-    assert project["import"]["contour_count"] == 1
-    assert validate_project(project) == []
+    assert project["import"]["contour_count"] == 2
+    assert not any(code.endswith("_repaired") for code in project["import"]["issue_counts"])
+    assert all(issue.get("blocking") is False for issue in validate_project(project))
+    assert_valid_gcode(export_project_gcode(project))
 
 
-def test_degenerate_loose_line_chain_is_ignored_after_chaining() -> None:
+def test_degenerate_loose_line_chain_is_preserved_after_chaining() -> None:
     dxf = dxf_document(
         """0
 LINE
@@ -6368,10 +6381,11 @@ LINE
     )
 
     assert project["import"]["entity_counts"]["LINE"] == 6
-    assert project["import"]["contour_count"] == 1
+    assert project["import"]["contour_count"] == 2
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
-    assert {issue["code"] for issue in validate_project(project)} == {"import_duplicate_segment_repaired"}
+    assert not any(code.endswith("_repaired") for code in project["import"]["issue_counts"])
+    assert all(issue.get("blocking") is False for issue in validate_project(project))
     assert_valid_gcode(export_project_gcode(project))
 
 

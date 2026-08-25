@@ -206,15 +206,15 @@ class PathContour:
         output: list[Point] = []
         for segment in self.segments:
             segment_points = segment.points(max_chord=max_chord)
-            if output and output[-1].almost_equals(segment_points[0]):
+            if output and output[-1].almost_equals(segment_points[0], tolerance=EPSILON):
                 output.extend(segment_points[1:])
             else:
                 output.extend(segment_points)
-        if len(output) > 1 and output[0].almost_equals(output[-1]):
+        if len(output) > 1 and output[0].almost_equals(output[-1], tolerance=EPSILON):
             output.pop()
         return output
 
-    def is_closed(self, tolerance: float = 0.05) -> bool:
+    def is_closed(self, tolerance: float = 1e-6) -> bool:
         return self.segments[0].start.almost_equals(self.segments[-1].end, tolerance=tolerance)
 
     def transformed(

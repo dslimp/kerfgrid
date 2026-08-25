@@ -22,6 +22,8 @@ from .options import QtPlasmaCOptions
 def offset_path_points(contour: PathContour, options: QtPlasmaCOptions) -> list[Point]:
     raw = contour.points(max_chord=max(options.path_tolerance * 8.0, 0.5))
     if len(raw) < 3:
+        if options.kerf_offset_fallback == "centerline" and len(raw) >= 2:
+            return list(raw)
         raise ValueError(f"{contour.name} has fewer than 3 geometry points")
     offset = _effective_kerf_width(options) / 2.0
     try:

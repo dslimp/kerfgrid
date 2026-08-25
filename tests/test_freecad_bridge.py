@@ -53,7 +53,8 @@ def test_freecad_bridge_builds_warning_only_import_payload() -> None:
 
     assert payload["filename"] == "part.dxf"
     assert payload["content"] == "0\nEOF\n"
-    assert payload["import_options"]["auto_close_gaps"] is True
+    assert payload["import_options"]["auto_close_gaps"] is False
+    assert payload["import_options"]["repair_geometry"] is False
     assert payload["import_options"]["unsafe_entity_policy"] == "warn"
     assert payload["base_project"]["import_options"]["unsafe_entity_policy"] == "warn"
     assert payload["base_project"]["post"]["kerf_offset_fallback"] == "centerline"
@@ -71,7 +72,8 @@ def test_freecad_bridge_preserves_base_project_options() -> None:
 
     assert payload["base_project"]["post"]["precision"] == 4
     assert payload["base_project"]["post"]["open_path_mode"] == "centerline"
-    assert payload["base_project"]["import_options"]["auto_close_gaps"] is True
+    assert payload["base_project"]["import_options"]["auto_close_gaps"] is False
+    assert payload["base_project"]["import_options"]["repair_geometry"] is False
     assert payload["base_project"]["import_options"]["layer_mapping"] == {"CUT": "cut"}
     assert payload["layer_mapping"] == {"CUT": "cut"}
 

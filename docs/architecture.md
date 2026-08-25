@@ -64,6 +64,8 @@ interaction. Modules stay browser-native ES modules; no bundler is required.
 
 - Open, self-touching, and self-intersecting source paths remain visible and
   exportable as centerline cuts.
+- Normal DXF import never closes gaps, drops segments, removes retraces, or
+  simplifies source paths. Repair requires an explicit operator action.
 - Findings are warnings, not export blockers.
 - Simulation parses generated export G-code.
 - Auto nest returns the best valid result already found when its optimization

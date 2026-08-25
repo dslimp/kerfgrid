@@ -213,7 +213,6 @@ wait_project_file_roundtrip='async () => {
   setChecked("safeTravel", false);
   setChecked("centerlineFallback", true);
   setChecked("openPathCenterline", true);
-  setChecked("importAutoCloseGaps", true);
   setChecked("importUnsafeEntityWarn", true);
   await waitFor(() => {
     const state = projectState();
@@ -228,7 +227,8 @@ wait_project_file_roundtrip='async () => {
       post.open_path_mode === "centerline" &&
       post.cut_order_strategy === "lower_left" &&
       state.import_options &&
-      state.import_options.auto_close_gaps === true &&
+      state.import_options.auto_close_gaps === false &&
+      state.import_options.repair_geometry === false &&
       state.import_options.unsafe_entity_policy === "warn";
   }, "round-trip source settings");
 
@@ -379,17 +379,16 @@ wait_import_options_controls='async () => {
     }
     throw new Error(`Timed out waiting for ${label}`);
   };
-  const autoClose = document.getElementById("importAutoCloseGaps");
   const unsafeWarn = document.getElementById("importUnsafeEntityWarn");
-  if (!autoClose || !unsafeWarn) throw new Error("Import option controls missing");
-  autoClose.checked = true;
-  autoClose.dispatchEvent(new Event("change", { bubbles: true }));
+  if (!unsafeWarn) throw new Error("Import option controls missing");
   unsafeWarn.checked = true;
   unsafeWarn.dispatchEvent(new Event("change", { bubbles: true }));
   await waitFor(
     () => {
       const options = projectState().import_options || {};
-      return options.auto_close_gaps === true && options.unsafe_entity_policy === "warn";
+      return options.auto_close_gaps === false &&
+        options.repair_geometry === false &&
+        options.unsafe_entity_policy === "warn";
     },
     "import option persistence"
   );
