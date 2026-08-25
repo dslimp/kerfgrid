@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KerfGrid</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <h1>KerfGrid</h1>
+          <span id="status">Ready</span>
+        </div>
+
+        <nav class="tab-strip" aria-label="Sidebar sections">
+          <button class="tab-btn active" type="button" data-tab="layout">Layout</button>
+          <button class="tab-btn" type="button" data-tab="nest">Nest</button>
+          <button class="tab-btn" type="button" data-tab="cut">Cut</button>
+          <button class="tab-btn" type="button" data-tab="sim">Sim</button>
+          <button class="tab-btn" type="button" data-tab="code">Code</button>
+        </nav>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Sheet</h2>
+          <label>Width mm<input id="sheetWidth" type="number" min="1" step="1"></label>
+          <label>Height mm<input id="sheetHeight" type="number" min="1" step="1"></label>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Manual</h2>
+          <label class="check-row"><input id="snapEnabled" type="checkbox"> Snap</label>
+          <label>Snap mm<input id="snapMm" type="number" min="0.1" step="0.1"></label>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="nest">
+          <h2>Nesting</h2>
+          <label>Margin mm<input id="sheetMargin" type="number" min="0" step="1"></label>
+          <label>Spacing mm<input id="spacing" type="number" min="0" step="1"></label>
+          <label>Nest runs<input id="nestAttempts" type="number" min="1" max="240" step="1"></label>
+          <label>Angle step deg<input id="nestAngleStep" type="number" min="1" max="90" step="1"></label>
+          <label>Optimization limit s<input id="nestMaxRuntime" type="number" min="1" max="120" step="1"></label>
+          <label>Workers (0 auto)<input id="nestWorkers" type="number" min="0" max="16" step="1"></label>
+          <label>Any rotation<input id="allowArbitraryRotation" type="checkbox"></label>
+          <label>Use holes<input id="allowHoleFiller" type="checkbox"></label>
+          <label>Common line<input id="commonLineCutting" type="checkbox"></label>
+          <div id="nestingInfo" class="readout compact">No nesting run</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="nest">
+          <h2>Nest Log</h2>
+          <div id="nestHistory" class="readout compact">No run history</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="nest">
+          <h2>Travel</h2>
+          <label>Safe travel<input id="safeTravel" type="checkbox"></label>
+          <label>Clearance mm<input id="travelClearance" type="number" min="0" step="0.5"></label>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Zones</h2>
+          <div class="button-grid">
+            <button id="addKeepoutBtn" type="button">Keepout</button>
+            <button id="addClampBtn" type="button">Clamp</button>
+            <button id="addDamagedBtn" type="button">Damaged</button>
+            <button id="addRemnantBtn" type="button">Remnant</button>
+            <button id="addPierceKeepoutBtn" type="button">Pierce KO</button>
+            <button id="addSlatBtn" type="button">Slat</button>
+            <button id="deleteZoneBtn" type="button">Delete Zone</button>
+          </div>
+          <div id="zonesList" class="readout compact">No zones</div>
+        </section>
+
+        <section class="sidebar-panel active parts-panel" data-tab-panel="layout">
+          <h2>Parts</h2>
+          <div class="table-wrap compact-table-wrap">
+            <table id="partsTable">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Qty</th>
+                  <th>Issues</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Templates</h2>
+          <label>Outer DIA mm<input id="templateOuterDia" type="number" min="1" step="1"></label>
+          <label>Center DIA mm<input id="templateCenterDia" type="number" min="0" step="1"></label>
+          <label>Width mm<input id="templateWidth" type="number" min="1" step="1"></label>
+          <label>Height mm<input id="templateHeight" type="number" min="1" step="1"></label>
+          <label>Bolt count<input id="templateBoltCount" type="number" min="0" max="24" step="1"></label>
+          <label>Bolt PCD mm<input id="templateBoltCircleDia" type="number" min="0" step="1"></label>
+          <label>Bolt DIA mm<input id="templateBoltDia" type="number" min="0" step="0.5"></label>
+          <div class="button-grid">
+            <button id="templateDiskBtn" type="button">Disk</button>
+            <button id="templatePlateBtn" type="button">Plate</button>
+            <button id="templateFlangeBtn" type="button">Flange</button>
+          </div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="cut">
+          <h2>Cut</h2>
+          <label>Thickness mm<input id="thickness" type="number" min="0.1" step="0.1"></label>
+          <label>Nozzle mm
+            <select id="nozzle">
+              <option value="0.8">0.8</option>
+              <option value="0.9">0.9</option>
+            </select>
+          </label>
+          <label>Feed
+            <select id="feedMode">
+              <option value="auto">Auto chart</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label>Manual mm/min<input id="manualFeed" type="number" min="1" step="10"></label>
+          <label>QtPlasmaC
+            <select id="materialMode">
+              <option value="temporary">Temporary material</option>
+              <option value="fixed">Fixed material</option>
+            </select>
+          </label>
+          <label>Material #<input id="materialNumber" type="number" min="0" step="1"></label>
+          <label>Wait s<input id="materialWait" type="number" min="0" step="0.1"></label>
+          <div id="cutSettingsInfo" class="readout compact">Loading</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="cut">
+          <h2>Cut Order</h2>
+          <label>Strategy
+            <select id="cutOrderStrategy">
+              <option value="nearest">Nearest</option>
+              <option value="lower_left">Lower-left</option>
+              <option value="heat_spread">Heat spread</option>
+            </select>
+          </label>
+          <label class="check-row"><input id="optimizeCutOrder" type="checkbox"> Optimize order</label>
+          <label class="check-row"><input id="keepPartContoursTogether" type="checkbox"> Keep part contours</label>
+          <label class="check-row"><input id="avoidCompletedContours" type="checkbox"> Avoid completed cuts</label>
+          <label>Heat weight<input id="heatSpreadWeight" type="number" min="0" step="0.05"></label>
+          <label>Heat lookback<input id="heatLookback" type="number" min="1" max="20" step="1"></label>
+          <label class="stack-label">Manual groups
+            <textarea id="cutOrderGroups" class="cut-order-groups-input" rows="4" spellcheck="false" placeholder="part_2_1&#10;part_1_1&#10;part_3"></textarea>
+          </label>
+          <div class="button-grid">
+            <button id="previewCutOrderBtn" type="button">Preview Order</button>
+            <button id="clearCutOrderPreviewBtn" type="button">Clear Preview</button>
+          </div>
+          <div id="cutOrderInfo" class="readout compact">Automatic order</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="cut">
+          <h2>Lead-in</h2>
+          <label>Mode
+            <select id="leadMode">
+              <option value="auto">Auto</option>
+              <option value="arc">Arc</option>
+              <option value="line">Line</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label>Length mm<input id="leadLength" type="number" min="0" step="0.1"></label>
+          <label>Lead-out mm<input id="leadOutLength" type="number" min="0" step="0.1"></label>
+          <label>Min hole DIA mm<input id="leadHoleMin" type="number" min="0" step="0.1"></label>
+          <label>Crater DIA mm<input id="pierceCrater" type="number" min="0" step="0.1"></label>
+          <label>Lead clearance mm<input id="leadClearance" type="number" min="0" step="0.1"></label>
+          <label>Small rules
+            <select id="smallFeatureSource">
+              <option value="cut_chart">Cut chart</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label>Small hole DIA mm<input id="smallHoleThreshold" type="number" min="0" step="0.1"></label>
+          <label>Small shape DIA mm<input id="smallShapeThreshold" type="number" min="0" step="0.1"></label>
+          <label>Small hole speed %<input id="smallHoleSpeed" type="number" min="1" max="100" step="1"></label>
+          <label>Overburn mm<input id="smallFeatureOverburn" type="number" min="0" step="0.1"></label>
+          <label>Early off mm<input id="smallFeatureEarlyOff" type="number" min="0" step="0.1"></label>
+          <label>Tab length mm<input id="tabLength" type="number" min="0" step="0.5"></label>
+          <label class="checkbox-row"><input id="autoTabs" type="checkbox"> Auto tabs</label>
+          <label>Auto tab count<input id="autoTabCount" type="number" min="1" max="12" step="1"></label>
+          <label>Auto tab length mm<input id="autoTabLength" type="number" min="0" step="0.5"></label>
+          <label>Auto tab min DIA mm<input id="autoTabMinDiameter" type="number" min="0" step="1"></label>
+          <label class="checkbox-row"><input id="centerlineFallback" type="checkbox"> Centerline fallback</label>
+          <label class="checkbox-row"><input id="openPathCenterline" type="checkbox"> Open paths centerline</label>
+          <div class="button-grid">
+            <button id="selectModeBtn" type="button">Select</button>
+            <button id="leadEditBtn" type="button">Lead Point</button>
+            <button id="tabEditBtn" type="button">Tab Point</button>
+            <button id="clearLeadsBtn" type="button">Clear Leads</button>
+            <button id="acceptAutoLeadsBtn" type="button">Accept Auto Leads</button>
+            <button id="clearAutoLeadsBtn" type="button">Clear Auto Leads</button>
+            <button id="clearTabsBtn" type="button">Clear Tabs</button>
+          </div>
+          <div id="leadEditInfo" class="readout compact">Select</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="cut">
+          <h2>Cut Chart</h2>
+          <input id="cutChartProfileFile" class="file-input" type="file" accept=".json,.cut-chart.json,application/json">
+          <div class="table-wrap compact-table-wrap">
+            <table id="cutChartTable">
+              <thead>
+                <tr>
+                  <th>mm</th>
+                  <th>Noz</th>
+                  <th>A</th>
+                  <th>Feed</th>
+                  <th>Kerf</th>
+                  <th>Pierce</th>
+                  <th>Cut H</th>
+                  <th>V</th>
+                  <th>THC</th>
+                  <th>SHole</th>
+                  <th>SShape</th>
+                  <th>S%</th>
+                  <th>OB</th>
+                  <th>EO</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="button-grid">
+            <button id="resetCutChartBtn" type="button">Reset Starter Chart</button>
+            <button id="exportCutChartBtn" type="button">Export Chart</button>
+          </div>
+          <div id="cutChartInfo" class="readout compact">Starter chart</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="cut">
+          <h2>Coupon Results</h2>
+          <input id="couponResultsFile" class="file-input" type="file" accept=".json,application/json">
+          <label class="stack-label">Measured JSON
+            <textarea id="couponResultsInput" class="coupon-results-input" rows="6" spellcheck="false" placeholder='{"revision":"shop-r1","results":[{"material":"mild_steel","thickness_mm":3,"nozzle_mm":0.9,"current_a":35,"feed_rate_mm_min":1120,"kerf_width_mm":1.34,"pierce_delay_s":0.48,"cut_height_mm":1.45,"arc_voltage_v":104.5,"thc_enabled":false,"coupon_id":"coupon-17","operator":"shop","measured_at":"2026-08-23T10:00:00Z"}]}'></textarea>
+          </label>
+          <div class="button-grid">
+            <button id="importCouponResultsBtn" type="button">Import Coupon Results</button>
+          </div>
+          <div id="couponResultsInfo" class="readout compact">Paste measured coupon JSON</div>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Selected</h2>
+          <div id="selectedInfo" class="readout">None</div>
+          <label>Rotations deg<input id="selectedRotations" type="text" placeholder="0,90,180,270"></label>
+          <label class="check-row"><input id="selectedGrainLock" type="checkbox"> Grain lock</label>
+          <label class="check-row"><input id="selectedAllowHoleFiller" type="checkbox"> Can fill holes</label>
+          <label class="check-row"><input id="selectedAllowHoleParent" type="checkbox"> Can host fillers</label>
+          <div class="button-grid">
+            <button id="duplicateBtn">Duplicate</button>
+            <button id="rotateBtn">Rotate 90</button>
+            <button id="mirrorBtn">Mirror</button>
+            <button id="lockBtn">Lock</button>
+            <button id="deleteBtn">Delete</button>
+          </div>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Job</h2>
+          <input id="importFile" class="file-input" type="file" accept=".json,.dxf">
+          <label class="check-row"><input id="importAutoCloseGaps" type="checkbox"> Auto close DXF gaps</label>
+          <label class="check-row"><input id="importUnsafeEntityWarn" type="checkbox"> Warn on unsafe DXF entities</label>
+          <label>Layer mode
+            <select id="importLayerMode">
+              <option value="heuristic">Auto layers</option>
+              <option value="cut_all">Cut all layers</option>
+              <option value="mapped_only">Mapped only</option>
+            </select>
+          </label>
+          <label class="stack-label">Layer map
+            <textarea id="importLayerMapping" class="layer-map-input" rows="4" spellcheck="false" placeholder="CNC_PROFILE=cut&#10;AUX_GEOM=construction&#10;SCRATCH_PASS=mark"></textarea>
+          </label>
+          <div id="importLayerInfo" class="readout compact">Layer map empty</div>
+          <div class="button-grid">
+            <button id="importBtn">Import</button>
+            <button id="openProjectBtn">Open Project</button>
+            <button id="saveProjectBtn">Save Project</button>
+            <button id="autoNestBtn">Auto Nest</button>
+            <button id="validateBtn">Validate</button>
+            <button id="exportBtn">Export NGC</button>
+            <button id="outlineBtn">Outline NGC</button>
+            <button id="reviewDxfBtn">Review DXF</button>
+            <button id="reviewReportBtn">Review Report</button>
+            <button id="simulateBtn">Play Sim</button>
+            <button id="stopSimBtn">Stop Sim</button>
+            <button id="loadExampleBtn">Reload Demo</button>
+          </div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="sim">
+          <h2>Simulation</h2>
+          <label>Playback x<input id="simPlayback" type="number" min="1" step="1"></label>
+          <div id="simulationInfo" class="readout compact">Simulation idle</div>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="code">
+          <h2>Issues</h2>
+          <pre id="issues" class="sidebar-pre">No issues</pre>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="code">
+          <h2>G-code</h2>
+          <textarea id="gcode" class="sidebar-code" spellcheck="false"></textarea>
+        </section>
+      </aside>
+
+      <main class="workspace">
+        <div class="canvas-wrap">
+          <div class="view-toolbar" aria-label="Primary job and view controls">
+            <button id="toolbarImportBtn" class="icon-btn" type="button" title="Import DXF" aria-label="Import DXF">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10"></path><path d="m8 9 4 4 4-4"></path><path d="M5 17v3h14v-3"></path></svg>
+            </button>
+            <button id="toolbarOpenProjectBtn" class="icon-btn" type="button" title="Open project" aria-label="Open project">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"></path><path d="M3 7v12"></path></svg>
+            </button>
+            <button id="toolbarSaveProjectBtn" class="icon-btn" type="button" title="Save project" aria-label="Save project">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h12l2 2v16H5z"></path><path d="M8 3v6h8V3"></path><path d="M8 17h8"></path></svg>
+            </button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button id="toolbarAutoNestBtn" class="icon-btn" type="button" title="Auto nest" aria-label="Auto nest">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4z"></path><path d="M13 4h7v5h-7z"></path><path d="M13 11h7v9h-7z"></path><path d="M4 13h7v7H4z"></path></svg>
+            </button>
+            <button id="toolbarValidateBtn" class="icon-btn" type="button" title="Validate" aria-label="Validate">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"></path></svg>
+            </button>
+            <button id="toolbarExportBtn" class="icon-btn" type="button" title="Export NGC" aria-label="Export NGC">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V11"></path><path d="m8 15 4-4 4 4"></path><path d="M5 7V4h14v3"></path></svg>
+            </button>
+            <button id="toolbarOutlineBtn" class="icon-btn" type="button" title="Outline NGC" aria-label="Outline NGC">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4z"></path><path d="M8 9h8v6H8z"></path></svg>
+            </button>
+            <button id="toolbarSimBtn" class="icon-btn" type="button" title="Play simulation" aria-label="Play simulation">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"></path></svg>
+            </button>
+            <button id="toolbarReportBtn" class="icon-btn" type="button" title="Review report" aria-label="Review report">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18H6z"></path><path d="M9 8h6"></path><path d="M9 12h6"></path><path d="M9 16h4"></path></svg>
+            </button>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <button id="undoBtn" class="icon-btn history-btn" type="button" title="Undo (Cmd/Ctrl+Z)" aria-label="Undo" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 4 12l5 5"></path><path d="M5 12h9a5 5 0 0 1 0 10h-2"></path></svg>
+            </button>
+            <button id="redoBtn" class="icon-btn history-btn" type="button" title="Redo (Cmd/Ctrl+Shift+Z / Ctrl+Y)" aria-label="Redo" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 5 5-5 5"></path><path d="M19 12h-9a5 5 0 0 0 0 10h2"></path></svg>
+            </button>
+            <button id="zoomOutBtn" class="icon-btn" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+            <button id="zoomInBtn" class="icon-btn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+            <button id="fitSheetBtn" type="button" title="Fit whole sheet">Sheet</button>
+            <button id="fitPartsBtn" type="button" title="Fit parts bounds">Parts</button>
+            <span id="zoomLabel" class="zoom-label">100%</span>
+          </div>
+          <canvas id="sheetCanvas" width="1200" height="720"></canvas>
+        </div>
+      </main>
+    </div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

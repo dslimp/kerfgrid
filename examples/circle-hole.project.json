@@ -1,0 +1,62 @@
+{
+  "format": "kerfgrid-project",
+  "format_version": 1,
+  "name": "circle_with_center_hole",
+  "sheet": {
+    "width_mm": 1000,
+    "height_mm": 500,
+    "margin_mm": 10
+  },
+  "spacing_mm": 8,
+  "cut": {
+    "material": "mild_steel",
+    "thickness_mm": 3,
+    "nozzle_mm": 0.9,
+    "feed_rate_mode": "auto",
+    "manual_feed_rate_mm_min": 1300
+  },
+  "post": {
+    "lead_in_mode": "auto",
+    "lead_in_mm": 5,
+    "lead_in_min_hole_diameter_mm": 20,
+    "small_hole_threshold_mm": 37,
+    "small_hole_speed_percent": 65,
+    "path_tolerance_mm": 0.1,
+    "precision": 3
+  },
+  "parts": [
+    {
+      "name": "disk",
+      "quantity": 1,
+      "allowed_rotations": [0, 90, 180, 270],
+      "outer": {
+        "type": "circle",
+        "x": 0,
+        "y": 0,
+        "radius_mm": 200
+      },
+      "holes": [
+        {
+          "type": "circle",
+          "x": 0,
+          "y": 0,
+          "radius_mm": 50
+        }
+      ]
+    }
+  ],
+  "placements": [
+    {
+      "part_name": "disk",
+      "instance": 1,
+      "dx": 250,
+      "dy": 250,
+      "rotation_deg": 0,
+      "manual": true
+    }
+  ],
+  "simulation": {
+    "playback_rate": 20,
+    "rapid_rate_mm_min": 8000
+  }
+}

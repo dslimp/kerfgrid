@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+
+macro_dir = Path(__file__).resolve().parent
+candidate_dirs = [
+    macro_dir / "PlasmaCamBridge",
+    macro_dir,
+]
+for candidate in candidate_dirs:
+    if candidate.exists() and str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+import plasma_cam_bridge_command
+
+
+plasma_cam_bridge_command.run_command()
