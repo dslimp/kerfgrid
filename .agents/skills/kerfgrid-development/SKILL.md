@@ -14,7 +14,7 @@ description: Implement and review KerfGrid DXF, nesting, CAM, QtPlasmaC, simulat
 5. Keep normal import non-mutating. Any gap closure, duplicate removal, simplification, or topology repair requires an explicit repair operation and its own before/after review.
 6. Return validation findings as warnings and include them in generated artifacts; export remains operator-controlled.
 7. For nesting, create a valid seed first, optimize only while time remains, and always retain the best valid result.
-8. Run focused tests, then the full unit suite. Restart the canonical server and run Playwright for UI/API work.
+8. Run focused tests, then the full unit suite. Restart the canonical server and run Playwright for UI/API work. Use user `launchd` when the server must survive the current Codex task.
 
 ## Acceptance
 

@@ -14,6 +14,7 @@ These rules apply to this repository.
 - Auto nest must return the best valid layout found before its optimization deadline. The deadline is not a minimum runtime and expiry must not discard a valid seed.
 - Prefer lower-left, compact layouts and leave unused stock above the packed region.
 - Use `http://127.0.0.1:8765/` for local UI work. Restart the server on that port after backend or frontend changes.
+- A server that must remain available after the Codex task ends must run under the user `launchd` session; a tool-owned foreground or background process is only suitable for checks during the current task.
 
 ## Architecture
 
