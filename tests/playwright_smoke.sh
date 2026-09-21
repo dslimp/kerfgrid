@@ -1113,6 +1113,10 @@ wait_outline='async () => {
   const gcode = document.getElementById("gcode").value;
   if (gcode.includes("M3")) throw new Error("Outline export contains torch start");
   if (!gcode.includes("outer dry outline")) throw new Error("Outline export does not trace outer contours");
+  if (!gcode.includes("#<kerfgrid_outline_feed> = ") || !gcode.includes("F#<kerfgrid_outline_feed>")) {
+    throw new Error("Outline export must use an independent named feed parameter");
+  }
+  if (/^F[0-9]/m.test(gcode)) throw new Error("Outline export contains a literal material-checked feed");
   return { status: "outline", lines: gcode.split("\n").length };
 }'
 

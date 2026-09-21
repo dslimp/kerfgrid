@@ -3641,6 +3641,35 @@ import {
     setStatus(`Outline ${result.line_count} lines`);
   }
 
+  async function sendLinuxCnc() {
+    syncProjectFromControls();
+    saveProject();
+    setStatus("Sending to LinuxCNC");
+    const result = await postJson("/api/send-linuxcnc", project, { timeoutMs: 60000 });
+    if (result.error) {
+      issuesEl.textContent = `${result.type}: ${result.error}`;
+      setStatus("LinuxCNC send failed");
+      return;
+    }
+    const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+    const uploadedFiles = Array.isArray(result.files) ? result.files : [];
+    const fileLines = uploadedFiles.map((file) => `File: ${file.filename} -> ${file.remote_path}`);
+    issuesEl.textContent = [
+      result.loaded ? `Loaded ${result.filename} into LinuxCNC` : `Uploaded ${result.filename}, but LinuxCNC did not load it`,
+      result.outline_filename ? `Outline button file: ${result.outline_filename}` : null,
+      `Remote: ${result.remote_path}`,
+      `Bytes: ${result.byte_count}`,
+      ...fileLines,
+      result.load_error ? `LOAD FAILED: ${result.load_error}` : null,
+      ...warnings.map((warning) => `WARNING: ${warning}`),
+    ].filter(Boolean).join("\n");
+    if (!result.loaded) {
+      setStatus("LinuxCNC load failed");
+      return;
+    }
+    setStatus(warnings.length ? "LinuxCNC loaded with warnings" : "Loaded into LinuxCNC");
+  }
+
   async function exportReviewDxf() {
     syncProjectFromControls();
     saveProject();
@@ -4622,6 +4651,7 @@ import {
     ["toolbarAutoNestBtn", autoNest],
     ["toolbarValidateBtn", validateProject],
     ["toolbarExportBtn", exportGcode],
+    ["toolbarSendLinuxCncBtn", sendLinuxCnc],
     ["toolbarOutlineBtn", exportOutlineGcode],
     ["toolbarSimBtn", playSimulation],
     ["toolbarReportBtn", reviewReport],

@@ -102,6 +102,21 @@ def test_freecad_bridge_posts_import_request() -> None:
     assert result["name"] == "part"
 
 
+def test_freecad_bridge_default_target_is_nh02_deployment() -> None:
+    assert core.normalize_server_url() == "http://192.168.88.61"
+    assert core.import_endpoint() == "http://192.168.88.61/api/import-dxf"
+    assert core.pending_project_endpoint() == "http://192.168.88.61/api/pending-project"
+    assert core.pending_project_url() == "http://192.168.88.61/kerfgrid/?pending_project=1"
+
+
+def test_freecad_bridge_splits_api_and_ui_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PLASMA_CAM_API_URL", "http://api.example.test/")
+    monkeypatch.setenv("PLASMA_CAM_UI_URL", "http://ui.example.test/kerfgrid/")
+
+    assert core.import_endpoint() == "http://api.example.test/api/import-dxf"
+    assert core.pending_project_url() == "http://ui.example.test/kerfgrid/?pending_project=1"
+
+
 def test_freecad_bridge_publishes_pending_project() -> None:
     captured = {}
 

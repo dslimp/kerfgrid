@@ -23,6 +23,7 @@ from plasma_cam.web_api import (
     import_dxf_project,
     project_review_report,
     preview_from_project,
+    send_project_to_linuxcnc,
     simulation_from_project,
     validate_project,
 )
@@ -86,6 +87,9 @@ class KerfGridHandler(SimpleHTTPRequestHandler):
                         "line_count": len(gcode.splitlines()),
                     }
                 )
+                return
+            if path == "/api/send-linuxcnc":
+                self._send_json(send_project_to_linuxcnc(project))
                 return
             if path == "/api/export-outline":
                 gcode = export_project_outline_gcode(project)

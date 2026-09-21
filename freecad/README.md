@@ -1,11 +1,11 @@
 # FreeCAD -> KerfGrid Bridge
 
-Sidecar integration for sending selected FreeCAD 2D geometry to the local
-KerfGrid nest at `http://127.0.0.1:8765/`.
+Sidecar integration for sending selected FreeCAD 2D geometry to the KerfGrid
+nest at `http://192.168.88.61/kerfgrid/`.
 
 The bridge exports the current FreeCAD selection to DXF, posts that DXF to
-`POST /api/import-dxf`, publishes the returned project to the local
-`/api/pending-project` slot, opens the KerfGrid web UI with
+`POST http://192.168.88.61/api/import-dxf`, publishes the returned project to
+the `/api/pending-project` slot, opens the KerfGrid web UI with
 `?pending_project=1`, and saves a backup `.kerfgrid.json` project file.
 
 ## Install As FreeCAD Workbench On macOS
@@ -74,12 +74,7 @@ Run `Macro -> Macros... -> PlasmaCamBridge.FCMacro`.
 
 ## Use
 
-1. Start KerfGrid:
-
-   ```sh
-   python3 server.py --host 127.0.0.1 --port 8765
-   ```
-
+1. Make sure KerfGrid is reachable at `http://192.168.88.61/kerfgrid/`.
 2. In FreeCAD, edit or select one `Sketcher::SketchObject`, or select several
    planar 2D objects.
 3. Press `To Nest` in the Sketcher `Edit Mode` / `Режим редактирования`
@@ -97,9 +92,13 @@ Generated files are written to:
 Override paths and server URL with:
 
 ```sh
-export PLASMA_CAM_URL=http://127.0.0.1:8765
+export PLASMA_CAM_API_URL=http://192.168.88.61
+export PLASMA_CAM_UI_URL=http://192.168.88.61/kerfgrid
 export PLASMA_CAM_FREECAD_OUTPUT_DIR=/tmp/plasma-cam-freecad
 ```
+
+The older `PLASMA_CAM_URL` variable is still accepted when API and UI live at
+the same root, for example a workstation-local `http://127.0.0.1:8765` server.
 
 ## Current Limits
 

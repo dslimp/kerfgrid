@@ -38,6 +38,28 @@ from .validation import assert_valid_gcode
 
 
 CUT_ORDER_OPTIMIZE_MAX_CONTOURS = 2_000
+GCODE_COMMENT_MAX_LEN = 80
+
+
+def _append_comment(lines: list[str], text: str) -> None:
+    lines.append(f"({_comment_text(text)})")
+
+
+def _append_wrapped_comment(lines: list[str], prefix: str, text: str) -> None:
+    value = _comment_text(text or "-")
+    first_prefix = prefix
+    next_prefix = f"{prefix}+"
+    while value:
+        active_prefix = first_prefix if not lines or not lines[-1].startswith(f"({prefix}") else next_prefix
+        available = max(1, GCODE_COMMENT_MAX_LEN - len(active_prefix) - 2)
+        if len(value) <= available:
+            _append_comment(lines, f"{active_prefix}{value}")
+            return
+        cut = value.rfind(" ", 0, available + 1)
+        if cut <= 0:
+            cut = available
+        _append_comment(lines, f"{active_prefix}{value[:cut]}")
+        value = value[cut:].strip()
 
 
 def _effective_kerf_width(options: QtPlasmaCOptions) -> float:
@@ -1059,23 +1081,20 @@ def generate_gcode(contours: Iterable[Contour], options: QtPlasmaCOptions) -> st
         )
         if options.cut_settings is not None:
             settings = options.cut_settings
-            lines.append(
+            _append_comment(
+                lines,
                 (
-                    f"(Cut settings: {settings.machine}, {settings.material}, "
-                    f"{_fmt(settings.thickness_mm, options.precision)} mm, "
-                    f"nozzle {_fmt(settings.nozzle_mm, options.precision)} mm, "
-                    f"{settings.current_a} A, {settings.feed_rate_mm_min} mm/min)"
-                )
+                    f"Cut settings: {settings.machine} {settings.material} "
+                    f"t={_fmt(settings.thickness_mm, options.precision)}mm "
+                    f"n={_fmt(settings.nozzle_mm, options.precision)}mm "
+                    f"I={settings.current_a}A F={settings.feed_rate_mm_min}"
+                ),
             )
-            lines.append(
-                (
-                    f"(Cut chart row: {settings.calibration_state}, "
-                    f"row={_comment_text(settings.row_id or '-')}, "
-                    f"revision={_comment_text(settings.row_revision or settings.profile_revision or '-')}, "
-                    f"coupon={_comment_text(settings.coupon_id or '-')}, "
-                    f"source={_comment_text(settings.source or '-')})"
-                )
-            )
+            _append_comment(lines, f"Cut chart row: {settings.calibration_state}")
+            _append_comment(lines, f"row={settings.row_id or '-'}")
+            _append_comment(lines, f"revision={settings.row_revision or settings.profile_revision or '-'}")
+            _append_comment(lines, f"coupon={settings.coupon_id or '-'}")
+            _append_wrapped_comment(lines, "source=", settings.source or "-")
     if options.cut_settings is not None and options.emit_temporary_material:
         lines.append(
             format_qtplasmac_material_comment(

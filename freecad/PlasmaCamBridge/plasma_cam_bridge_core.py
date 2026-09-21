@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 
-DEFAULT_SERVER_URL = "http://127.0.0.1:8765"
+DEFAULT_SERVER_URL = "http://192.168.88.61"
+DEFAULT_UI_URL = "http://192.168.88.61/kerfgrid"
 DEFAULT_TIMEOUT_S = 20
 DEFAULT_IMPORT_OPTIONS = {
     "auto_close_gaps": False,
@@ -47,7 +48,12 @@ class PlasmaCamImportSummary:
 
 
 def normalize_server_url(value: str | None = None) -> str:
-    raw = value or os.environ.get("PLASMA_CAM_URL") or DEFAULT_SERVER_URL
+    raw = value or os.environ.get("PLASMA_CAM_API_URL") or os.environ.get("PLASMA_CAM_URL") or DEFAULT_SERVER_URL
+    return raw.rstrip("/")
+
+
+def normalize_ui_url(value: str | None = None) -> str:
+    raw = value or os.environ.get("PLASMA_CAM_UI_URL") or os.environ.get("PLASMA_CAM_URL") or DEFAULT_UI_URL
     return raw.rstrip("/")
 
 
@@ -60,7 +66,7 @@ def pending_project_endpoint(server_url: str | None = None) -> str:
 
 
 def pending_project_url(server_url: str | None = None) -> str:
-    return f"{normalize_server_url(server_url)}/?pending_project=1"
+    return f"{normalize_ui_url(server_url)}/?pending_project=1"
 
 
 def output_root(value: str | os.PathLike[str] | None = None) -> Path:
@@ -251,7 +257,7 @@ def summary_text(project: dict[str, Any]) -> str:
 
 
 def open_plasma_cam(server_url: str | None = None) -> None:
-    webbrowser.open(normalize_server_url(server_url))
+    webbrowser.open(normalize_ui_url(server_url))
 
 
 def open_plasma_cam_pending_project(server_url: str | None = None) -> None:

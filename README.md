@@ -45,7 +45,9 @@ Optional FreeCAD sidecar integration lives in `freecad/`. It
 adds a FreeCAD workbench/macro button that exports the selected Sketch or planar
 2D objects to DXF, posts them to `/api/import-dxf`, saves the returned
 `.kerfgrid.json` backup, publishes the project to `/api/pending-project`, and
-opens the local UI so the browser loads the project automatically.
+opens the KerfGrid UI so the browser loads the project automatically. By
+default the bridge targets the always-on `nh02` deployment at
+`http://192.168.88.61/kerfgrid/`.
 
 Run the focused shop acceptance gate for the current known problem-file set
 without requiring every local DXF to import:

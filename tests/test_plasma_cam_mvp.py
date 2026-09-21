@@ -355,8 +355,10 @@ def test_fubag_plasma_40_cut_settings_emit_qtplasmac_temporary_material() -> Non
     assert settings.small_hole_speed_percent == 65
 
     comment = format_qtplasmac_material_comment(settings)
-    assert comment.startswith("(o=0, nu=0, na=Fubag40 mild steel 3mm n0.9 35A")
+    assert comment.startswith("(o=0, ph=3")
+    assert len(comment) <= 80
     assert "fr=1300" in comment
+    assert "mt=3" in comment
     assert "kw=1.2" in comment
     assert "th=1" in comment
     assert "ca=35" in comment
@@ -384,7 +386,7 @@ def test_cut_settings_drive_gcode_feed_and_kerf_when_enabled() -> None:
     )
 
     assert_valid_gcode(gcode)
-    assert "(o=0, nu=0, na=Fubag40 mild steel 3mm n0.9 35A" in gcode
+    assert "(o=0, ph=3, pd=0.35, ch=1.5, fr=1300" in gcode
     assert "fr=1300" in gcode
     assert "kw=1.2" in gcode
     assert "F#<_hal[plasmac.cut-feed-rate]>" in gcode
@@ -400,7 +402,7 @@ def test_fixed_qtplasmac_material_mode_uses_m190_wait_and_hal_feed() -> None:
     gcode = export_project_gcode(project)
 
     assert_valid_gcode(gcode)
-    assert "(o=0, nu=0" not in gcode
+    assert "(o=0" not in gcode
     assert "M190 P7" in gcode
     assert "M66 P3 L3 Q2" in gcode
     assert "F#<_hal[plasmac.cut-feed-rate]>" in gcode
@@ -1442,6 +1444,25 @@ def test_validator_rejects_qtplasmac_cutter_compensation_mode() -> None:
     assert "cutter_compensation" in {issue.code for issue in issues}
 
 
+def test_validator_rejects_qtplasmac_magic_comment_too_long() -> None:
+    bad_gcode = "\n".join(
+        [
+            "(o=0, nu=0, na=Fubag40 mild steel 3mm n0.9 35A, ph=3, pd=0.35, ch=1.5, fr=1300, kw=1.2, th=1, ca=35, cv=103)",
+            "G21",
+            "G90",
+            "G17",
+            "G40",
+            "G64 P0.1",
+            "M52 P1",
+            "M68 E3 Q0",
+            "M2",
+        ]
+    )
+
+    issues = validate_gcode(bad_gcode)
+    assert "qtplasmac_magic_comment_too_long" in {issue.code for issue in issues}
+
+
 def test_array_nest_places_repeated_parts_and_checks_sheet_bounds() -> None:
     part = PartProfile("disk", demo_contours(hole_radius=50))
     nested = array_nest(
@@ -1835,9 +1856,29 @@ def test_project_outline_export_traces_outer_contours_without_torch() -> None:
     assert "M3" not in gcode
     assert "M5 $0" not in gcode
     assert "M5 $-1" in gcode
-    assert "F3000" in gcode
+    assert "#<kerfgrid_outline_feed> = 3000\nF#<kerfgrid_outline_feed>\n" in gcode
+    assert "F3000" not in gcode
+    assert "(o=" not in gcode
+    assert "M190" not in gcode
     assert "disk_1_disk_outer outer dry outline" in gcode
     assert "disk_1_disk_hole" not in gcode
+
+
+@pytest.mark.parametrize("feed_rate", [875.5, 4200.125])
+def test_outline_named_feed_preserves_override_without_changing_cut_or_geometry(feed_rate: float) -> None:
+    project = example_project()
+    original_outline = export_project_outline_gcode(project)
+    original_cut = export_project_gcode(project)
+    project["post"]["outline_feed_rate_mm_min"] = feed_rate
+
+    gcode = export_project_outline_gcode(project)
+
+    assert validate_gcode(gcode) == []
+    assert f"#<kerfgrid_outline_feed> = {feed_rate}\nF#<kerfgrid_outline_feed>\n" in gcode
+    assert [line for line in gcode.splitlines() if line.startswith("F")] == ["F#<kerfgrid_outline_feed>"]
+    assert gcode.index("F#<kerfgrid_outline_feed>") < gcode.index("G0 ")
+    assert gcode.replace(f"#<kerfgrid_outline_feed> = {feed_rate}", "#<kerfgrid_outline_feed> = 3000") == original_outline
+    assert export_project_gcode(project) == original_cut
 
 
 def test_project_outline_export_preserves_path_outer_shape() -> None:

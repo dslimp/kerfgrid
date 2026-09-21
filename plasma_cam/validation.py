@@ -12,6 +12,7 @@ _PLAIN_M3_RE = re.compile(r"(^|\s)M0?3(\s|$)")
 _QTPLASMAC_M3_RE = re.compile(r"(^|\s)M0?3\s+\$0\s+S1(\s|$)")
 _QTPLASMAC_M5_RE = re.compile(r"(^|\s)M0?5\s+\$0(\s|$)")
 _CUTTER_COMP_RE = re.compile(r"(^|\s)G4[12]\.1(\s|$)")
+_QTPLASMAC_MAGIC_COMMENT_MAX_LEN = 80
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,16 @@ def validate_gcode(gcode: str, *, allow_z: bool = False) -> list[GCodeIssue]:
         issues.append(GCodeIssue("missing_program_end", "Program must end with M2"))
 
     for index, raw_line in enumerate(lines, start=1):
+        if raw_line.lstrip().startswith("(o=") and len(raw_line) > _QTPLASMAC_MAGIC_COMMENT_MAX_LEN:
+            issues.append(
+                GCodeIssue(
+                    "qtplasmac_magic_comment_too_long",
+                    "QtPlasmaC magic comment must stay short enough for the LinuxCNC G-code filter",
+                    index,
+                    raw_line,
+                )
+            )
+
         line = _strip_comment(raw_line)
         if not line:
             continue

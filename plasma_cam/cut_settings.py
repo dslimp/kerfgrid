@@ -652,15 +652,13 @@ def format_qtplasmac_material_comment(
     material_number: int = 0,
     name: str | None = None,
 ) -> str:
-    display_name = _sanitize_material_name(name or _default_material_name(settings))
     params = [
         "o=0",
-        f"nu={material_number}",
-        f"na={display_name}",
         f"ph={_fmt(settings.pierce_height_mm)}",
         f"pd={_fmt(settings.pierce_delay_s)}",
         f"ch={_fmt(settings.cut_height_mm)}",
         f"fr={settings.feed_rate_mm_min}",
+        f"mt={_fmt(settings.thickness_mm)}",
         f"kw={_fmt(settings.kerf_width_mm)}",
         f"th={1 if settings.thc_enabled else 0}",
         f"ca={settings.current_a}",
