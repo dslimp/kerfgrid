@@ -1,16 +1,47 @@
 # KerfGrid
 
-Local-first plasma nesting, CAM, simulation, and QtPlasmaC G-code generation.
+Shared-workspace plasma nesting, CAM, simulation, and QtPlasmaC G-code generation.
 
-KerfGrid runs locally, keeps projects as JSON files, imports DXF geometry, and
+KerfGrid keeps the active project and uploaded DXFs on its server, imports DXF geometry, and
 uses the same generated G-code for export and simulation. Product invariants
 are documented in `docs/contracts/`; repository workflow rules live in
 `AGENTS.md`.
+
+All computers opening the same server see the same active project, placements,
+quantities, cut settings and uploaded-file library. Changes save automatically;
+other open windows update within about 1.5 seconds. The SQLite workspace
+survives server restarts. Configure `KERFGRID_STATE_DIR` or `--state-dir`;
+nh02 uses `/var/lib/kerfgrid/workspace.sqlite3`.
+
+The first browser connecting to an empty server migrates its existing local
+project. Other browsers use the server version. The previous local project is
+kept separately and can be downloaded with the backup button. `localStorage`
+remains a cache/recovery draft. Stale saves are rejected; local changes remain
+available until the operator chooses which version to keep.
+
+## Upload DXF Without A Browser
+
+From the nh repository root:
+
+```sh
+python3 tools/plasma-cam/kerfgrid_client.py /path/to/part.dxf --quantity 1 --thickness-mm 4
+```
+
+The default server is `http://192.168.88.61`; use `--server http://127.0.0.1:8765`
+for local checks. Uploads appear in all open windows without a file picker or
+reload. Matching source filenames/part names update geometry while preserving
+manual positions and quantities. `--mode replace` starts a new job with a
+revision check. Reuse `--request-id` when retrying an uncertain upload.
+See [the API contract](docs/contracts/api.md) for direct JSON requests.
 
 Normal DXF import preserves source geometry exactly. It does not close gaps,
 drop short or duplicate segments, remove retraces, or simplify paths. Open,
 self-touching, and self-intersecting paths are cut as centerlines with warnings;
 geometry repair is an explicit opt-in operation.
+
+Placement uses the full sheet width and height, with no edge margin. Spacing
+between parts remains configurable. Existing projects keep their placement
+coordinates when opened; rerun Auto Nest to pack them against the sheet bounds.
 
 ## Run
 
@@ -43,9 +74,8 @@ tests/playwright_visual_smoke.sh
 
 Optional FreeCAD sidecar integration lives in `freecad/`. It
 adds a FreeCAD workbench/macro button that exports the selected Sketch or planar
-2D objects to DXF, posts them to `/api/import-dxf`, saves the returned
-`.kerfgrid.json` backup, publishes the project to `/api/pending-project`, and
-opens the KerfGrid UI so the browser loads the project automatically. By
+2D objects to DXF, uploads them to `/api/workspace/import-dxf`, saves the returned
+`.kerfgrid.json` backup, and opens the KerfGrid UI with the shared project. By
 default the bridge targets the always-on `nh02` deployment at
 `http://192.168.88.61/kerfgrid/`.
 
@@ -224,8 +254,8 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
 - Manual placement, duplicate, delete, keyboard Delete/Backspace, arrow-key
   nudge with Shift/Alt step modifiers, lock, snap grid, mirror-selected-part
   MVP, arbitrary rotation handle, and live bbox collision/sheet/zone preview
-  for the selected placement. The preview uses the same sheet/margin bounds as
-  backend validation, so a valid placement exactly on the configured margin is
+  for the selected placement. The preview uses the same full-sheet bounds as
+  backend validation, so a valid placement exactly on the sheet edge is
   not shown as a false sheet warning.
 - Parts table supports drag-copy placement onto the sheet as a manual nesting
   workflow.
@@ -346,18 +376,22 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
 - Small-hole/small-shape speed reduction and THC lock.
 - Visual lead point and tab point editing.
 - Keepout, clamp, damaged, slat, remnant, and pierce keepout zones.
-- Safe rapid routing around configured zones and already completed contour
-  bounding obstacles.
-- Safe-travel route failures and very large obstacle sets emit direct-rapid
-  warnings instead of blocking export; the warning is visible in validation,
-  simulation, G-code comments, and the operator checklist.
+- The persistent “Обходить вырезанные детали” setting chooses safe routing or
+  direct rapids. Safe routing avoids configured zones and completed contour
+  outlines with the selected clearance, and considers reachable exits when
+  choosing the next part. Inner cutouts are also treated as possible loose slugs.
+- If a route cannot be found within the sheet bounds, or the obstacle set is
+  too complex, export remains available with a warning and an explicit M0
+  before the affected direct rapid. Clear that route before resuming. Simulation
+  marks these transitions in red and reports the M0 count. Direct mode disables
+  both avoidance and these generated pauses.
 - Configurable cut order policy with nearest, lower-left, heat-spread, and
   optional manual group-order overrides; review reports include the planned
   contour sequence for checking heat and tip-up risk before export.
 - Cut-order preview overlay draws the planned pierce/entry sequence directly on
   the sheet for operator review before simulation/export.
-- The Cut tab exposes cut-order strategy, heat-spread tuning, completed-cutout
-  avoidance, grouping, and manual group order controls in project JSON.
+- The Cut tab exposes cut-order strategy, heat-spread tuning, grouping, and
+  manual group order controls; the Nest tab selects safe/direct travel.
 - Optional common-line nesting/export guard for shared straight edges.
 - Geometry kerf offset before posting through `pyclipper`, with `shapely`
   validity checks for self-intersections, split offsets, and collapsed offsets;
@@ -371,7 +405,7 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
   crater checks against the physical sheet, neighboring parts, and blocked
   zones.
 - Dry outline NGC export for tracing placed outer contours without torch start.
-- Review DXF export for sheet/margin, placed outer/hole geometry, zones, lead
+- Review DXF export for sheet bounds, placed outer/hole geometry, zones, lead
   markers, tabs, and annotations in sheet coordinates.
 - JSON review report with export preflight, G-code validation result,
   validation issues, import/nest summary, cut chart row metadata, part counts,
@@ -427,10 +461,14 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
   `F#<_hal[plasmac.cut-feed-rate]>`.
 - The generated G-code is validated before export.
 - Cutter compensation `G41.1/G42.1` is rejected; kerf is handled in geometry.
-- Export should be blocked on layout collisions, out-of-sheet geometry, unsafe
-  lead-in/out or pierce crater clearance, blocked zones, or invalid G-code.
-- Safe-travel fallback is warning-only: it must be reviewed because the torch
-  may rapid over a raised slug, but it does not block the job.
+- Layout collisions, out-of-sheet geometry, unsafe leads, and blocked zones
+  remain visible warnings and do not block export. Malformed requests and
+  invalid generated G-code are errors.
+- Unresolved safe travel inserts M0 before the warned direct rapid. It does not
+  block export; resuming authorizes that move after the operator clears it.
+  Routing uses the original cutout footprints. It cannot predict a part tipping
+  or rotating beyond that footprint, or eliminate the initial departure from
+  a cutout. Use a clearance appropriate to the torch and review the simulation.
 
 ## Next Immediate Stages
 

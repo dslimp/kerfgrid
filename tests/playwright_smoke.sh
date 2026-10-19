@@ -159,7 +159,9 @@ wait_save_project='async () => {
   await waitFor(() => document.getElementById("status").textContent === "Project saved", "project save");
   const saved = projectState();
   if (saved.format !== "kerfgrid-project") throw new Error(`Unexpected project format ${saved.format}`);
-  if (saved.format_version !== 1) throw new Error(`Unexpected project version ${saved.format_version}`);
+  if (saved.format_version !== 2) throw new Error(`Unexpected project version ${saved.format_version}`);
+  if (document.getElementById("sheetMargin")) throw new Error("Sheet margin control is still present");
+  if ("margin_mm" in saved.sheet) throw new Error("Saved project still contains a sheet margin");
   if (!Array.isArray(saved.parts) || !saved.parts.length) throw new Error("Saved project has no parts");
   if (!Array.isArray(saved.placements) || !saved.placements.length) throw new Error("Saved project has no placements");
   return { status: "saved", format: saved.format, version: saved.format_version };
@@ -195,7 +197,6 @@ wait_project_file_roundtrip='async () => {
   await waitFor(() => Array.isArray(projectState().placements) && projectState().placements.length === 1, "round-trip base");
   setInput("sheetWidth", 1234);
   setInput("sheetHeight", 678);
-  setInput("sheetMargin", 12);
   setInput("spacing", 6);
   setInput("thickness", 5);
   setInput("nozzle", 0.9);
@@ -253,9 +254,10 @@ wait_project_file_roundtrip='async () => {
   URL.createObjectURL = originalCreateObjectURL;
   HTMLAnchorElement.prototype.click = originalClick;
   const saved = JSON.parse(captured);
-  if (saved.format !== "kerfgrid-project" || saved.format_version !== 1 || !saved.saved_at) {
+  if (saved.format !== "kerfgrid-project" || saved.format_version !== 2 || !saved.saved_at) {
     throw new Error(`Saved project metadata mismatch: ${JSON.stringify({ format: saved.format, version: saved.format_version, saved_at: saved.saved_at })}`);
   }
+  const legacy = { ...saved, format_version: 1, sheet: { ...saved.sheet, margin_mm: 99 } };
 
   document.getElementById("loadExampleBtn").click();
   await waitFor(() => (projectState().sheet || {}).width_mm === 1000, "demo reset before project import");
@@ -265,13 +267,15 @@ wait_project_file_roundtrip='async () => {
     throw new Error(`Open Project did not switch file accept: ${input.accept}`);
   }
   const transfer = new DataTransfer();
-  transfer.items.add(new File([captured], "roundtrip.kerfgrid.json", { type: "application/json" }));
+  transfer.items.add(new File([JSON.stringify(legacy)], "roundtrip.kerfgrid.json", { type: "application/json" }));
   input.files = transfer.files;
   input.dispatchEvent(new Event("change", { bubbles: true }));
   await waitFor(() => {
     const state = projectState();
     const post = state.post || {};
     return state.sheet &&
+      state.format_version === 2 &&
+      !("margin_mm" in state.sheet) &&
       state.sheet.width_mm === 1234 &&
       state.sheet.height_mm === 678 &&
       state.cut &&
@@ -589,7 +593,7 @@ wait_cut_order_controls='async () => {
   const heatWeight = document.getElementById("heatSpreadWeight");
   const heatLookback = document.getElementById("heatLookback");
   const groups = document.getElementById("cutOrderGroups");
-  const avoid = document.getElementById("avoidCompletedContours");
+  const avoid = document.getElementById("safeTravel");
   const openPathCenterline = document.getElementById("openPathCenterline");
   if (!strategy || !heatWeight || !heatLookback || !groups || !avoid || !openPathCenterline) {
     throw new Error("Cut order controls missing");
@@ -1284,7 +1288,12 @@ load_common_line_ui_project='async () => {
     lead_overrides: [],
     simulation: { playback_rate: 200, rapid_rate_mm_min: 8000 }
   };
-  localStorage.setItem(storageKey, JSON.stringify(project));
+  const current = await (await fetch("/api/workspace")).json();
+  const saved = await fetch("/api/workspace", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: current.revision, project })
+  });
+  if (!saved.ok) throw new Error(await saved.text());
   return { status: "common-line-ui-loaded", placements: project.placements.length };
 }'
 
@@ -1316,8 +1325,8 @@ wait_common_line_ui_sim='async () => {
     throw new Error(`Common-line UI warning missing: ${issues}`);
   }
   const selected = document.getElementById("selectedInfo").textContent || "";
-  if (selected.includes("outside sheet/margin")) {
-    throw new Error(`Common-line UI preview reported false sheet/margin issue: ${selected}`);
+  if (selected.includes("outside sheet")) {
+    throw new Error(`Common-line UI preview reported false sheet bounds issue: ${selected}`);
   }
   return { status: "common-line-ui-sim", info: document.getElementById("simulationInfo").textContent };
 }'
@@ -1362,7 +1371,12 @@ wait_auto_leads='async () => {
   const nested = await response.json();
   const autoCount = (nested.lead_overrides || []).filter((item) => item.auto_generated).length;
   if (autoCount <= 0) throw new Error("Auto leads were not generated");
-  localStorage.setItem(storageKey, JSON.stringify(nested));
+  const current = await (await fetch("/api/workspace")).json();
+  const saved = await fetch("/api/workspace", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: current.revision, project: nested })
+  });
+  if (!saved.ok) throw new Error(await saved.text());
   return { status: "auto-leads-loaded", autoCount };
 }'
 
@@ -1566,3 +1580,96 @@ pw click "#autoNestBtn" >/dev/null
 pw --json eval "${wait_autonest}" >/dev/null
 pw press Delete >/dev/null
 pw --json eval "${wait_delete_selected}"
+pw --json eval 'async () => {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const state = () => JSON.parse(localStorage.getItem("kerfgrid.project.v1") || "{}");
+  for (const mode of ["compact", "strip"]) {
+    const select = document.getElementById("nestLayoutMode");
+    if (!select || select.options.length !== 2) throw new Error("Missing nesting mode selector");
+    const panel = select.closest("section");
+    const wasActive = panel.classList.contains("active");
+    panel.classList.add("active");
+    const width = select.getBoundingClientRect().width;
+    if (!wasActive) panel.classList.remove("active");
+    if (width < 250) throw new Error("Nesting mode text is clipped by a narrow selector");
+    select.value = mode;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const started = Date.now();
+    while (state().nesting?.layout_mode !== mode && Date.now() - started < 5000) await wait(50);
+    if (state().nesting?.layout_mode !== mode) throw new Error(`Mode ${mode} was not saved`);
+    document.getElementById("autoNestBtn").click();
+    while (state().nesting?.last_result?.layout_mode !== mode && Date.now() - started < 20000) await wait(100);
+    if (state().nesting?.last_result?.layout_mode !== mode) throw new Error(`Mode ${mode} was not used by auto nest`);
+  }
+  return { status: "nesting modes", selected: state().nesting.layout_mode };
+}'
+pw --json eval 'async () => {
+  const { completedCutPaths, pointsUntilTime } = await import("/js/simulation.js");
+  const points = [{x:0,y:0,t:0}, {x:10,y:0,t:1,type:"rapid"}, {x:20,y:0,t:2,type:"cut"}, {x:40,y:0,t:3,type:"rapid"}, {x:50,y:0,t:4,type:"cut"}];
+  const duringRapid = completedCutPaths(pointsUntilTime(points, 2.5));
+  const duringCut = completedCutPaths(pointsUntilTime(points, 3.5));
+  if (duringRapid.length !== 1 || duringRapid[0].at(-1).x !== 20) throw new Error("Rapid was highlighted as cut");
+  if (duringCut.length !== 2 || duringCut[1][0].x !== 40 || duringCut[1].at(-1).x !== 45) throw new Error("Separate cuts were joined across rapid");
+  return { status: "simulation cut/rapid separation" };
+}'
+pw --json eval 'async () => {
+  const current = await (await fetch("/api/workspace")).json();
+  const project = structuredClone(current.project);
+  project.name = "interlocking-bounds-smoke";
+  project.sheet = { width_mm: 200, height_mm: 150 };
+  project.spacing_mm = 6;
+  project.post = { ...project.post, lead_in_mode: "none", lead_in_mm: 0, lead_out_mm: 0, pierce_crater_diameter_mm: 0, safe_travel: false };
+  const points = [{x:-40,y:-20},{x:40,y:-20},{x:-40,y:20}];
+  project.parts = [{ name: "triangle", quantity: 2, allowed_rotations: [0,180], contours: [{type:"path",name:"triangle_outer",kind:"outer",segments:points.map((start,index) => ({type:"line",start,end:points[(index+1)%points.length]}))}] }];
+  project.placements = [{part_name:"triangle",instance:1,dx:50,dy:30,rotation_deg:0},{part_name:"triangle",instance:2,dx:50,dy:37,rotation_deg:180}];
+  project.zones = []; project.tabs = []; project.lead_overrides = [];
+  project.nesting = { layout_mode: "compact" };
+  const response = await fetch("/api/workspace", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({expected_revision:current.revision,project})});
+  if (!response.ok) throw new Error(await response.text());
+  return { status: "interlocking bounds loaded" };
+}' >/dev/null
+pw --json eval "${reload_current_page}" >/dev/null
+pw --json eval 'async () => {
+  const started=Date.now();
+  while (Date.now()-started<10000) {
+    const p=JSON.parse(localStorage.getItem("kerfgrid.project.v1") || "{}");
+    const selected=document.getElementById("selectedInfo").textContent;
+    if (p.name==="interlocking-bounds-smoke" && document.getElementById("issues").textContent==="No issues" && selected.includes("triangle_") && !selected.includes("collision/spacing")) return {status:"interlocking bounds validated"};
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw new Error(`False bounding-box collision after exact validation: ${document.getElementById("selectedInfo").textContent}`);
+}'
+pw --json eval 'async () => {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const state = () => JSON.parse(localStorage.getItem("kerfgrid.project.v1") || "{}");
+  const control = document.getElementById("safeTravel");
+  if (!control || document.getElementById("avoidCompletedContours")) throw new Error("Travel controls are not consolidated");
+  for (const enabled of [false, true]) {
+    control.checked = enabled;
+    control.dispatchEvent(new Event("change", { bubbles: true }));
+    const started = Date.now();
+    let stored = null;
+    while (Date.now() - started < 10000) {
+      stored = await (await fetch("/api/workspace")).json();
+      if (state().post.safe_travel === enabled && stored.project.post.safe_travel === enabled) break;
+      await wait(100);
+    }
+    if (stored.project.post.safe_travel !== enabled) throw new Error("Travel mode did not save on server");
+    if (document.getElementById("travelClearance").disabled === enabled) throw new Error("Clearance control does not follow travel mode");
+    if (enabled && !document.getElementById("travelModeInfo").textContent.includes("M0")) throw new Error("Missing blocked-route pause explanation");
+  }
+  return { status: "travel mode saved", safe: state().post.safe_travel };
+}'
+pw --json eval "${reload_current_page}" >/dev/null
+pw --json eval 'async () => {
+  const started = Date.now();
+  while (Date.now() - started < 10000) {
+    if (document.getElementById("workspaceStatus").textContent === "Saved on server") {
+      const project = JSON.parse(localStorage.getItem("kerfgrid.project.v1") || "{}");
+      if (!project.post.safe_travel || !document.getElementById("safeTravel").checked) throw new Error("Travel mode lost after reload");
+      return {status:"travel mode survives reload"};
+    }
+    await new Promise(resolve => setTimeout(resolve,100));
+  }
+  throw new Error("Workspace did not load after travel mode reload");
+}'

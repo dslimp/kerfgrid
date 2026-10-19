@@ -478,3 +478,23 @@ tbody tr.active {
     height: 520px;
   }
 }
+.workspace-sync {
+  padding: 8px 0;
+  color: #50606c;
+  font-size: 12px;
+}
+
+.workspace-sync button {
+  margin-top: 6px;
+}
+
+.workspace-sync [hidden] {
+  display: none;
+}
+
+.workspace-files {
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}

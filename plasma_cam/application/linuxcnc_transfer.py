@@ -35,6 +35,21 @@ print("__KERFGRID_UPLOAD_OK__")
 """
 
 
+_REMOTE_NATIVE_LOAD_SCRIPT = r"""
+import linuxcnc
+import subprocess
+import sys
+
+status = linuxcnc.stat()
+status.poll()
+if status.interp_state != linuxcnc.INTERP_IDLE or status.paused or status.queue or not status.inpos:
+    raise SystemExit("LinuxCNC is busy; native GUI load requires stopped motion")
+if not status.ini_filename:
+    raise SystemExit("LinuxCNC active INI is unavailable")
+subprocess.run(["/usr/local/bin/linuxcnc-load", "--ini", status.ini_filename, sys.argv[1]], check=True)
+"""
+
+
 @dataclass(frozen=True)
 class LinuxCNCTransferConfig:
     host: str = "192.168.64.5"
@@ -46,12 +61,7 @@ class LinuxCNCTransferConfig:
     timeout_s: float = 30.0
     control_persist_s: int = 300
     control_path: str = "/tmp/kerfgrid-linuxcnc-%r@%h:%p"
-    load_command: str = (
-        "runuser -u linuxcnc -- python3 -c "
-        "'import linuxcnc,sys; path=sys.argv[1]; c=linuxcnc.command(); "
-        "c.program_open(path); c.wait_complete(); s=linuxcnc.stat(); s.poll(); "
-        "print(s.file); raise SystemExit(0 if s.file == path else 1)' {remote_path}"
-    )
+    load_command: str = "runuser -u linuxcnc -- python3 -c " + shlex.quote(_REMOTE_NATIVE_LOAD_SCRIPT) + " {remote_path}"
 
 
 @dataclass(frozen=True)
@@ -102,6 +112,7 @@ def send_gcode_to_linuxcnc(
         "uploaded": result["uploaded"],
         "loaded": result["loaded"],
         "load_error": result["load_error"],
+        "loaded_file": result["loaded_file"],
         "host": result["host"],
         "port": result["port"],
         "user": result["user"],
@@ -147,11 +158,13 @@ def send_gcode_bundle_to_linuxcnc(
     uploaded = _UPLOAD_OK_MARKER in output
     if _OWNER_WARN_MARKER in output:
         warnings.append("Uploaded, but owner change failed")
-    if completed.returncode == 0:
+    receipt = _native_load_receipt(completed.stdout or "", remote_path)
+    if completed.returncode == 0 and uploaded and receipt is not None:
         loaded = True
     elif uploaded:
         loaded = False
-        load_error = _completed_detail(completed) or "LinuxCNC load command failed"
+        load_error = ("Upload succeeded, but a verified native GUI load receipt is missing"
+                      if completed.returncode == 0 else _completed_detail(completed) or "LinuxCNC load command failed")
     else:
         raise RuntimeError(_completed_detail(completed) or "LinuxCNC upload command failed")
 
@@ -170,10 +183,27 @@ def send_gcode_bundle_to_linuxcnc(
         "uploaded": uploaded,
         "loaded": loaded,
         "load_error": load_error,
+        "loaded_file": receipt["loaded_file"] if loaded else None,
         "host": transfer_config.host,
         "port": transfer_config.port,
         "user": transfer_config.user,
     }
+
+
+def _native_load_receipt(output: str, remote_path: str) -> dict | None:
+    for line in reversed(output.splitlines()):
+        try:
+            receipt = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(receipt, dict):
+            continue
+        loaded_file = receipt.get("loaded_file")
+        if (receipt.get("loaded") is True and receipt.get("native_gui_load") is True
+                and receipt.get("source") == remote_path and isinstance(loaded_file, str)
+                and loaded_file.startswith("/") and loaded_file != remote_path):
+            return receipt
+    return None
 
 
 def _ssh_command(ssh_bin: str, config: LinuxCNCTransferConfig, key_path: str, remote_command: str) -> list[str]:

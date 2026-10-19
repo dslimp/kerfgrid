@@ -14,3 +14,10 @@
 - Holes are rendered as holes in the part fill, while source contour strokes
   remain visible.
 - The backend is authoritative for export and simulation geometry.
+- Closed path lead-in/out directions face the waste side, including at concave
+  vertices. Explicit operator pierce coordinates are preserved. Validation warns
+  when a lead or its pierce crater intersects the retained material of its own
+  part, as well as checking other parts, sheet bounds and zones.
+- A requested closed-path entry is projected onto the compensated edge; it may
+  split that edge without changing the contour. Simulation highlights executed
+  cuts separately and keeps rapid traverses dashed after playback.

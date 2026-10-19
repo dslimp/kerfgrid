@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import math
 import os
 import sys
@@ -18,6 +19,7 @@ import plasma_cam.importers.dxf as dxf_importer_module
 import plasma_cam.post as post_module
 import plasma_cam.web_api as web_api_module
 from plasma_cam.autonest import ShelfNestOptions, _compact_layout, shelf_nest, shelf_nest_result
+from plasma_cam.application.project_store import dump_project
 from plasma_cam.cut_settings import (
     DEFAULT_CUT_PROFILE_PATH,
     apply_coupon_results_to_cut_chart,
@@ -348,14 +350,15 @@ def test_fubag_plasma_40_cut_settings_emit_qtplasmac_temporary_material() -> Non
     assert settings.feed_rate_mm_min == 1300
     assert settings.kerf_width_mm == 1.2
     assert settings.pierce_delay_s == 0.35
-    assert settings.cut_height_mm == 1.5
+    assert settings.pierce_height_mm == 8.0
+    assert settings.cut_height_mm == 8.0
     assert settings.cut_volts is not None
     assert settings.small_hole_threshold_mm == 36
     assert settings.small_shape_threshold_mm == 36
     assert settings.small_hole_speed_percent == 65
 
     comment = format_qtplasmac_material_comment(settings)
-    assert comment.startswith("(o=0, ph=3")
+    assert comment.startswith("(o=0, ph=8")
     assert len(comment) <= 80
     assert "fr=1300" in comment
     assert "mt=3" in comment
@@ -386,7 +389,7 @@ def test_cut_settings_drive_gcode_feed_and_kerf_when_enabled() -> None:
     )
 
     assert_valid_gcode(gcode)
-    assert "(o=0, ph=3, pd=0.35, ch=1.5, fr=1300" in gcode
+    assert "(o=0, ph=8, pd=0.35, ch=8, fr=1300" in gcode
     assert "fr=1300" in gcode
     assert "kw=1.2" in gcode
     assert "F#<_hal[plasmac.cut-feed-rate]>" in gcode
@@ -461,8 +464,8 @@ def test_cut_chart_table_exposes_fubag_speed_rows() -> None:
     assert "revision" in row
     assert "quality_notes" in row
     assert row["feed_rate_mm_min"] == 1300
-    assert row["cut_height_mm"] == 1.5
-    assert row["pierce_height_mm"] == 3.0
+    assert row["cut_height_mm"] == 8.0
+    assert row["pierce_height_mm"] == 8.0
     assert row["arc_voltage_v"] is not None
     assert row["thc_enabled"] is True
     assert row["small_hole_threshold_mm"] == 36
@@ -1140,7 +1143,7 @@ def test_safe_travel_blocked_warns_and_uses_direct_rapid(monkeypatch: pytest.Mon
     assert "right_slug outer pierce" in gcode
 
 
-def test_safe_travel_large_route_grid_warns_instead_of_exhaustive_search() -> None:
+def test_safe_travel_many_coordinates_use_visibility_graph_instead_of_grid() -> None:
     contours = (
         CircleContour("left_slug", Point(20, 20), 5, "outer", "test"),
         CircleContour("right_slug", Point(220, 20), 5, "outer", "test"),
@@ -1164,8 +1167,8 @@ def test_safe_travel_large_route_grid_warns_instead_of_exhaustive_search() -> No
     )
 
     assert_valid_gcode(gcode)
-    assert "WARNING: safe travel route blocked" in gcode
-    assert "using direct rapid" in gcode
+    assert "WARNING: safe travel" not in gcode
+    assert "safe rapid" in gcode
     assert "right_slug outer pierce" in gcode
 
 
@@ -1781,10 +1784,108 @@ def test_auto_nest_uses_lattice_for_repeated_identical_parts() -> None:
         ),
     )
 
-    assert result.summary.best_attempt.startswith("lattice/")
+    assert result.summary.attempt_count > 1
+    assert result.summary.best_attempt.startswith(("lattice/", "shelf-seed"))
     assert result.summary.used_height_mm <= 370
     assert len(result.layout.placed_parts) == 20
     assert validate_layout(result.layout) == []
+
+
+@pytest.mark.parametrize("legacy_margin", [None, 10, 100])
+def test_project_uses_full_sheet_and_keeps_part_spacing(legacy_margin: float | None) -> None:
+    project = example_project()
+    project["sheet"] = {"width_mm": 100, "height_mm": 40}
+    if legacy_margin is not None:
+        project["sheet"]["margin_mm"] = legacy_margin
+    project["spacing_mm"] = 6
+    project["parts"] = [rectangle_part_json("plate", 47, 40, quantity=2)]
+    project["placements"] = [
+        {"part_name": "plate", "instance": 1, "dx": 23.5, "dy": 20},
+        {"part_name": "plate", "instance": 2, "dx": 76.5, "dy": 20},
+    ]
+    original_placements = [dict(placement) for placement in project["placements"]]
+
+    preview = preview_from_project(project)
+    outline = export_project_outline_gcode(project)
+
+    assert preview["sheet"] == {"width": 100, "height": 40}
+    assert not {issue["code"] for issue in preview["issues"]} & {"outside_sheet", "part_collision"}
+    assert "G1 X0 Y0" in outline
+    assert "G1 X100 Y40" in outline
+    assert project["placements"] == original_placements
+    project["placements"][1]["dx"] -= 0.5
+    assert "part_collision" in {issue["code"] for issue in validate_project(project)}
+
+
+def test_auto_nest_fits_parts_without_edge_margin_and_preserves_spacing() -> None:
+    project = example_project()
+    project["sheet"] = {"width_mm": 100, "height_mm": 40, "margin_mm": 25}
+    project["spacing_mm"] = 6
+    project["parts"] = [{**rectangle_part_json("plate", 47, 40, quantity=2), "allowed_rotations": [0]}]
+    project["placements"] = []
+    project["post"]["lead_in_mode"] = "none"
+    project["nesting"] = {"auto_nest_attempts": 1, "auto_nest_max_runtime_s": 1, "auto_nest_parallel_workers": 1}
+
+    nested = auto_nest_project(project)
+    boxes = sorted(part.bbox() for part in web_api_module.layout_from_project(nested).placed_parts)
+
+    assert nested["sheet"] == {"width_mm": 100, "height_mm": 40}
+    assert nested["format_version"] == 2
+    assert nested["spacing_mm"] == 6
+    assert boxes == [(0.0, 0.0, 47.0, 40.0), (53.0, 0.0, 100.0, 40.0)]
+    assert not {issue["code"] for issue in validate_project(nested)} & {"outside_sheet", "part_collision"}
+
+
+def test_legacy_project_round_trip_drops_margin_without_moving_parts(tmp_path: Path) -> None:
+    project = example_project()
+    project["format_version"] = 1
+    project["sheet"]["margin_mm"] = 30
+    path = tmp_path / "legacy.kerfgrid.json"
+    path.write_text(json.dumps(project), encoding="utf-8")
+
+    loaded = load_project(path)
+    saved = json.loads(dump_project(project))
+
+    for normalized in (loaded, saved):
+        assert normalized["format_version"] == 2
+        assert "margin_mm" not in normalized["sheet"]
+        assert normalized["placements"] == project["placements"]
+        assert normalized["spacing_mm"] == project["spacing_mm"]
+    assert project["sheet"]["margin_mm"] == 30
+
+
+def test_dxf_import_ignores_legacy_margin_and_starts_at_zero() -> None:
+    base = example_project()
+    base["sheet"]["margin_mm"] = 100
+    project = import_dxf_project({
+        "filename": "circle-hole.dxf",
+        "content": (PROJECT_ROOT / "examples" / "circle-hole.dxf").read_text(encoding="utf-8"),
+        "base_project": base,
+    })
+
+    box = web_api_module.layout_from_project(project).placed_parts[0].bbox()
+
+    assert box == (0.0, 0.0, 400.0, 400.0)
+    assert "margin_mm" not in project["sheet"]
+    assert base["sheet"]["margin_mm"] == 100
+
+
+def test_coupon_layout_has_no_edge_margin_and_keeps_spacing() -> None:
+    project = generate_coupon_test_project({
+        "thickness_mm": 3,
+        "nozzle_mm": 0.9,
+        "feed_rate_mm_min": [1100, 1200],
+        "kerf_width_mm": [1.2],
+        "pierce_delay_s": [0.35],
+        "columns": 2,
+        "spacing_mm": 12,
+        "margin_mm": 100,
+    })
+    boxes = sorted(part.bbox() for part in web_api_module.layout_from_project(project).placed_parts)
+
+    assert project["sheet"] == {"width_mm": 192, "height_mm": 45}
+    assert boxes == [(0.0, 0.0, 90.0, 45.0), (102.0, 0.0, 192.0, 45.0)]
+    assert project["spacing_mm"] == 12
 
 
 def test_project_auto_nest_defaults_to_quarter_turn_rotations_when_missing() -> None:
@@ -1796,7 +1897,8 @@ def test_project_auto_nest_defaults_to_quarter_turn_rotations_when_missing() -> 
 
     preview = preview_from_project(project)
 
-    assert preview["issues"] == []
+    assert {issue["code"] for issue in preview["issues"]} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in preview["issues"])
     assert preview["parts"][0]["placement"]["rotation_deg"] in (90.0, 270.0)
 
 
@@ -1934,7 +2036,7 @@ def test_project_review_dxf_exports_sheet_layers_and_native_arc_entities() -> No
 
     assert "SECTION\n2\nENTITIES" in dxf
     assert "0\nLINE\n8\nSHEET" in dxf
-    assert "0\nLINE\n8\nMARGIN" in dxf
+    assert "MARGIN" not in dxf
     assert "0\nARC\n8\nOUTER" in dxf
     assert "0\nCIRCLE\n8\nHOLE" in dxf
     assert "0\nLINE\n8\nZONES" in dxf
@@ -2724,7 +2826,7 @@ def test_auto_nest_uses_polygon_nfp_for_curved_triangle_pack() -> None:
     nested = auto_nest_project(project)
     summary = nested["nesting"]["last_result"]
 
-    assert validate_project(nested) == []
+    assert all(issue["code"] == "safe_travel" and not issue["blocking"] for issue in validate_project(nested))
     assert len(nested["placements"]) == 3
     assert summary["nfp_candidate_count"] > 0
     assert summary["used_height_mm"] < 190
@@ -3129,7 +3231,7 @@ def test_effective_spacing_accepts_cut_section_value_when_top_level_missing() ->
 
 def test_auto_nest_can_use_arbitrary_rotation_step() -> None:
     project = example_project()
-    project["sheet"] = {"width_mm": 160, "height_mm": 160, "margin_mm": 10}
+    project["sheet"] = {"width_mm": 140, "height_mm": 140}
     project["spacing_mm"] = 0
     project["parts"] = [
         {
@@ -3280,7 +3382,9 @@ CIRCLE
     assert {contour["kind"] for contour in contours} == {"outer", "hole"}
     assert any(contour["type"] == "path" and contour["kind"] == "outer" for contour in contours)
     assert any(contour["type"] == "circle" and contour["kind"] == "hole" for contour in contours)
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
 
     gcode = export_project_gcode(project)
     assert_valid_gcode(gcode)
@@ -3443,7 +3547,9 @@ ELLIPSE
     assert "unsupported_entity" not in issue_codes
     assert {contour["kind"] for contour in contours} == {"outer", "hole"}
     assert all(contour["type"] == "path" for contour in contours)
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -3530,7 +3636,9 @@ TRACE
     assert project["import"]["part_count"] == 3
     assert project["import"]["contour_count"] == 3
     assert all(part["contours"][0]["type"] == "path" for part in project["parts"])
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -3600,7 +3708,9 @@ HATCH
     assert project["import"]["contour_count"] == 2
     assert {contour["kind"] for contour in contours} == {"outer", "hole"}
     assert all(contour["type"] == "path" for contour in contours)
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -3648,7 +3758,9 @@ MPOLYGON
     assert project["import"]["entity_counts"]["MPOLYGON"] == 1
     assert project["import"]["contour_count"] == 1
     assert project["parts"][0]["contours"][0]["type"] == "path"
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -3765,7 +3877,9 @@ MLEADERSTYLE
     assert "unsupported_entity" not in issue_codes
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["contour_count"] == 1
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -3861,7 +3975,7 @@ ETCH_LABEL
     assert issue["blocking"] is False
     assert project["import"]["safe_for_export"] is True
     validation_issues = validate_project(project)
-    assert {issue["code"] for issue in validation_issues} == {"import_mark_layer_skipped"}
+    assert {issue["code"] for issue in validation_issues} == {"import_mark_layer_skipped", "lead_outside_sheet"}
     assert {issue["blocking"] for issue in validation_issues} == {False}
     assert_valid_gcode(export_project_gcode(project))
 
@@ -3985,7 +4099,7 @@ SCRATCH_PASS
     assert issue["entity_type"] == "LINE"
     assert issue["layer"] == "SCRATCH_PASS"
     validation_issues = validate_project(project)
-    assert {issue["code"] for issue in validation_issues} == {"import_mark_layer_skipped"}
+    assert {issue["code"] for issue in validation_issues} == {"import_mark_layer_skipped", "lead_outside_sheet"}
     assert {issue["blocking"] for issue in validation_issues} == {False}
     assert_valid_gcode(export_project_gcode(project))
 
@@ -4063,7 +4177,9 @@ DECOR
     }
     assert project["import"]["contour_count"] == 1
     assert len(project["parts"]) == 1
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4141,7 +4257,9 @@ def test_dxf_region_acis_rectangle_imports_as_cut_contour() -> None:
     assert project["import"]["warning_count"] == 0
     assert "unsupported_unsafe_entity" not in project["import"]["issue_counts"]
     assert len(project["parts"]) == 1
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4284,7 +4402,9 @@ LWPOLYLINE
     assert project["import"]["contour_count"] == 3
     assert {contour["kind"] for contour in project["parts"][0]["contours"]} == {"outer", "hole"}
     assert {contour["kind"] for contour in project["parts"][1]["contours"]} == {"outer"}
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
 
     gcode = export_project_gcode(project)
     assert_valid_gcode(gcode)
@@ -4337,7 +4457,9 @@ SEQEND
 
     assert project["import"]["entity_counts"]["POLYLINE"] == 1
     assert project["parts"][0]["contours"][0]["type"] == "path"
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4428,7 +4550,9 @@ EOF
     assert project["import"]["entity_counts"]["LWPOLYLINE"] == 1
     assert project["import"]["contour_count"] == 1
     assert project["parts"][0]["contours"][0]["type"] == "path"
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4529,7 +4653,9 @@ EOF
     assert project["import"]["entity_counts"]["LWPOLYLINE"] == 4
     assert project["import"]["part_count"] == 4
     assert project["import"]["contour_count"] == 4
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "safe_travel"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4682,21 +4808,21 @@ LINE
     assert import_issue["target_x"] == pytest.approx(0)
     assert import_issue["target_y"] == pytest.approx(0)
     assert import_issue["chain_length_mm"] == pytest.approx(100)
-    assert import_issue["sheet_x"] == pytest.approx(110)
-    assert import_issue["sheet_y"] == pytest.approx(10)
-    assert import_issue["target_sheet_x"] == pytest.approx(10)
-    assert import_issue["target_sheet_y"] == pytest.approx(10)
+    assert import_issue["sheet_x"] == pytest.approx(100.0)
+    assert import_issue["sheet_y"] == pytest.approx(0.0)
+    assert import_issue["target_sheet_x"] == pytest.approx(0.0)
+    assert import_issue["target_sheet_y"] == pytest.approx(0.0)
     preview = preview_from_project(project)
     assert [part["part_name"] for part in preview["parts"]] == ["open"]
     validation_issue = next(issue for issue in validate_project(project) if issue["code"] == "import_open_contour")
     assert validation_issue["chain_length_mm"] == pytest.approx(100)
-    assert validation_issue["target_sheet_x"] == pytest.approx(10)
+    assert validation_issue["target_sheet_x"] == pytest.approx(0.0)
     assert validation_issue["blocking"] is False
     assert validation_issue["review_required"] is False
     gcode = export_project_gcode(project)
     assert "WARNING: import_open_contour" in gcode
     assert "WARNING: open_path_centerline" in gcode
-    assert "G1 X110 Y10" in gcode
+    assert "G1 X100 Y0" in gcode
     assert_valid_gcode(gcode)
 
 
@@ -4734,8 +4860,8 @@ LINE
     assert "centerline open cut" in open_issue["message"]
     gcode = export_project_gcode(project)
     assert "open centerline pierce" in gcode
-    assert "G0 X10 Y10" in gcode
-    assert "G1 X110 Y10" in gcode
+    assert "G0 X0 Y0" in gcode
+    assert "G1 X100 Y0" in gcode
     simulation = simulation_from_gcode(project, gcode)
     assert any(segment["type"] == "cut" for segment in simulation["segments"])
 
@@ -4880,7 +5006,9 @@ CONSTRUCTION
 
     assert project["import"]["contour_count"] == 1
     assert project["import"]["safe_for_export"] is True
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
     assert_valid_gcode(export_project_gcode(project))
 
 
@@ -4918,9 +5046,10 @@ LINE
     assert {issue["code"] for issue in validate_project(project)} == {
         "import_gap_closure_suggestion",
         "import_open_contour",
+        "lead_outside_sheet",
     }
     gcode = export_project_gcode(project)
-    assert "G1 X10.01 Y10" in gcode
+    assert "G1 X0.01 Y0" in gcode
     assert any(segment["type"] == "cut" for segment in simulation_from_project(project)["segments"])
     assert_valid_gcode(gcode)
 
@@ -5170,14 +5299,14 @@ LINE
     assert gap_issue["y"] == pytest.approx(10.8)
     assert gap_issue["target_x"] == pytest.approx(10)
     assert gap_issue["target_y"] == pytest.approx(10)
-    assert gap_issue["sheet_x"] == pytest.approx(20)
-    assert gap_issue["sheet_y"] == pytest.approx(20.8)
-    assert gap_issue["target_sheet_x"] == pytest.approx(20)
-    assert gap_issue["target_sheet_y"] == pytest.approx(20)
+    assert gap_issue["sheet_x"] == pytest.approx(10.0)
+    assert gap_issue["sheet_y"] == pytest.approx(10.8)
+    assert gap_issue["target_sheet_x"] == pytest.approx(10.0)
+    assert gap_issue["target_sheet_y"] == pytest.approx(10.0)
 
     validation_issue = next(issue for issue in validate_project(project) if issue["code"] == "import_gap_closed_repaired")
     assert validation_issue["gap_mm"] == pytest.approx(0.8)
-    assert validation_issue["sheet_x"] == pytest.approx(20)
+    assert validation_issue["sheet_x"] == pytest.approx(10.0)
     assert validation_issue["blocking"] is False
     assert validation_issue["review_required"] is False
     gcode = export_project_gcode(project)
@@ -5270,10 +5399,10 @@ LINE
     assert repair_issue["y"] == pytest.approx(20.6)
     assert repair_issue["target_x"] == pytest.approx(20)
     assert repair_issue["target_y"] == pytest.approx(20)
-    assert repair_issue["sheet_x"] == pytest.approx(30)
-    assert repair_issue["sheet_y"] == pytest.approx(30.6)
-    assert repair_issue["target_sheet_x"] == pytest.approx(30)
-    assert repair_issue["target_sheet_y"] == pytest.approx(30)
+    assert repair_issue["sheet_x"] == pytest.approx(20.0)
+    assert repair_issue["sheet_y"] == pytest.approx(20.6)
+    assert repair_issue["target_sheet_x"] == pytest.approx(20.0)
+    assert repair_issue["target_sheet_y"] == pytest.approx(20.0)
     assert "import_gap_closed_repaired" in {issue["code"] for issue in validate_project(repaired)}
     assert_valid_gcode(export_project_gcode(repaired))
 
@@ -5983,7 +6112,10 @@ LINE
     assert project["import"]["safe_for_export"] is True
     assert project["import"]["blocking_issue_count"] == 0
     assert project["import"]["issue_counts"] == {"collinear_overlap_repaired": 1}
-    assert validate_project(project) == [
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet", "import_collinear_overlap_repaired"}
+    assert all(issue["blocking"] is False for issue in issues)
+    assert [issue for issue in issues if issue["code"].startswith("import_")] == [
         {
             "code": "import_collinear_overlap_repaired",
             "message": "Collinear retrace DXF path spike removed near X65.000 Y100.000",
@@ -5993,8 +6125,8 @@ LINE
             "entity_type": "LINE/ARC/ELLIPSE/SPLINE/LWPOLYLINE/POLYLINE/HATCH",
             "x": 65.0,
             "y": 100.0,
-            "sheet_x": 75.0,
-            "sheet_y": 110.0,
+            "sheet_x": 65.0,
+            "sheet_y": 100.0,
         }
     ]
     assert_valid_gcode(export_project_gcode(project))
@@ -6070,13 +6202,13 @@ LWPOLYLINE
     assert overlap_issue["y"] == pytest.approx(20)
     assert overlap_issue["target_x"] == pytest.approx(80)
     assert overlap_issue["target_y"] == pytest.approx(20)
-    assert overlap_issue["sheet_x"] == pytest.approx(50)
-    assert overlap_issue["sheet_y"] == pytest.approx(30)
-    assert overlap_issue["target_sheet_x"] == pytest.approx(90)
-    assert overlap_issue["target_sheet_y"] == pytest.approx(30)
+    assert overlap_issue["sheet_x"] == pytest.approx(40.0)
+    assert overlap_issue["sheet_y"] == pytest.approx(20.0)
+    assert overlap_issue["target_sheet_x"] == pytest.approx(80.0)
+    assert overlap_issue["target_sheet_y"] == pytest.approx(20.0)
 
     validation_issue = next(issue for issue in validate_project(project) if issue["code"] == "import_collinear_overlap")
-    assert validation_issue["target_sheet_x"] == pytest.approx(90)
+    assert validation_issue["target_sheet_x"] == pytest.approx(80.0)
     gcode = export_project_gcode(project)
     assert "WARNING: import_collinear_overlap" in gcode
     assert "WARNING: kerf_offset_centerline" in gcode
@@ -6213,7 +6345,9 @@ EOF
     assert project["import"]["entity_counts"]["LINE"] == 4
     assert project["import"]["contour_count"] == 1
     assert project["parts"][0]["contours"][0]["type"] == "path"
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
 
 
 def test_dxf_spline_segments_can_chain_with_lines() -> None:
@@ -6289,7 +6423,9 @@ LINE
 
     assert project["import"]["entity_counts"]["SPLINE"] == 1
     assert project["import"]["contour_count"] == 1
-    assert validate_project(project) == []
+    issues = validate_project(project)
+    assert {issue["code"] for issue in issues} == {"lead_outside_sheet"}
+    assert all(issue["blocking"] is False for issue in issues)
 
 
 def test_degenerate_closed_lwpolyline_is_preserved_and_exported() -> None:

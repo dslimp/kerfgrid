@@ -83,16 +83,15 @@ def build_coupon_test_project(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Coupon dimensions are too small for a validation slot")
 
     spacing = float(config.get("spacing_mm", 12.0))
-    margin = float(config.get("margin_mm", 10.0))
     columns = max(1, int(config.get("columns", min(6, math.ceil(math.sqrt(len(coupons)))))))
     rows = math.ceil(len(coupons) / columns)
     sheet_width = max(
         float(config.get("sheet_width_mm", 0.0)),
-        margin * 2 + columns * coupon_width + max(0, columns - 1) * spacing,
+        columns * coupon_width + max(0, columns - 1) * spacing,
     )
     sheet_height = max(
         float(config.get("sheet_height_mm", 0.0)),
-        margin * 2 + rows * coupon_height + max(0, rows - 1) * spacing,
+        rows * coupon_height + max(0, rows - 1) * spacing,
     )
     parts = []
     placements = []
@@ -106,8 +105,8 @@ def build_coupon_test_project(config: dict[str, Any]) -> dict[str, Any]:
             {
                 "part_name": part_name,
                 "instance": 1,
-                "dx": margin + coupon_width / 2 + column * (coupon_width + spacing),
-                "dy": margin + coupon_height / 2 + row * (coupon_height + spacing),
+                "dx": coupon_width / 2 + column * (coupon_width + spacing),
+                "dy": coupon_height / 2 + row * (coupon_height + spacing),
                 "rotation_deg": 0,
                 "manual": True,
             }
@@ -136,8 +135,10 @@ def build_coupon_test_project(config: dict[str, Any]) -> dict[str, Any]:
 
     revision = str(config.get("revision", datetime.now(timezone.utc).strftime("%Y%m%d")))
     return {
+        "format": "kerfgrid-project",
+        "format_version": 2,
         "name": str(config.get("name") or f"fubag40_coupon_{_number_token(thickness_mm)}mm_n{_number_token(base_settings.nozzle_mm)}"),
-        "sheet": {"width_mm": round(sheet_width, 3), "height_mm": round(sheet_height, 3), "margin_mm": margin},
+        "sheet": {"width_mm": round(sheet_width, 3), "height_mm": round(sheet_height, 3)},
         "spacing_mm": spacing,
         "cut": {
             "material": base_settings.material,

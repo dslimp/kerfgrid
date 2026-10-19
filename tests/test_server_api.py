@@ -17,8 +17,11 @@ sys.modules[spec.name] = server
 spec.loader.exec_module(server)
 
 
-def test_pending_project_slot_is_single_use() -> None:
-    server._set_pending_project({"name": "from_freecad"})
-
-    assert server._take_pending_project() == {"name": "from_freecad"}
-    assert server._take_pending_project() is None
+def test_server_uses_durable_shared_workspace(tmp_path) -> None:
+    instance = server.create_server('127.0.0.1', 0, tmp_path)
+    try:
+        instance.workspace.publish_legacy({'name': 'from_freecad', 'parts': [], 'placements': []})
+        assert instance.workspace.snapshot()['project']['name'] == 'from_freecad'
+        assert instance.workspace.snapshot()['project']['name'] == 'from_freecad'
+    finally:
+        instance.server_close()

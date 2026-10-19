@@ -1,7 +1,12 @@
 # Project Contract
 
 KerfGrid stores one JSON document with `format: "kerfgrid-project"` and
-`format_version: 1`.
+`format_version: 2`.
+
+The active document is shared server state. SQLite stores its revision and
+original DXF files. Browser caches never replace a newer server project
+automatically. Up to 50 previous snapshots remain in the database; JSON
+download/open is still available for portable backups.
 
 KerfGrid has no pre-release compatibility promise. A contract change updates
 `format_version` and may intentionally reject older project files; no migration
@@ -10,13 +15,17 @@ adapter is required until the product explicitly adopts that policy.
 Required top-level data:
 
 - `name`: job name.
-- `sheet`: `width_mm`, `height_mm`, and `margin_mm`.
+- `sheet`: `width_mm` and `height_mm`. The full sheet is available for placement;
+  there is no edge margin. Version 1 files still open: legacy `margin_mm` is
+  ignored and removed on save, while existing placements keep their coordinates.
 - `spacing_mm`: requested spacing between parts.
 - `parts`: reusable part definitions with explicit contours.
 - `placements`: instances on the active sheet.
 - `cut`: material, thickness, nozzle, and feed selection.
 - `post`: QtPlasmaC and toolpath settings.
 - `simulation`: playback and rapid-rate settings.
+- `nesting.layout_mode`: manual choice of `compact` (compact block from origin)
+  or `strip` (minimum occupied height along X); omitted values retain `strip`.
 - `import_options.auto_close_gaps` and `import_options.repair_geometry` default
   to `false`; normal import must not enable either option implicitly.
 

@@ -4,9 +4,9 @@ Sidecar integration for sending selected FreeCAD 2D geometry to the KerfGrid
 nest at `http://192.168.88.61/kerfgrid/`.
 
 The bridge exports the current FreeCAD selection to DXF, posts that DXF to
-`POST http://192.168.88.61/api/import-dxf`, publishes the returned project to
-the `/api/pending-project` slot, opens the KerfGrid web UI with
-`?pending_project=1`, and saves a backup `.kerfgrid.json` project file.
+`POST http://192.168.88.61/api/workspace/import-dxf`, opens the KerfGrid web UI,
+and saves a backup `.kerfgrid.json` project file. The upload appears in all
+open windows without a pending slot or file picker.
 
 ## Install As FreeCAD Workbench On macOS
 
@@ -102,8 +102,8 @@ the same root, for example a workstation-local `http://127.0.0.1:8765` server.
 
 ## Current Limits
 
-- The pending project slot is local and single-use. If the browser is refreshed
-  after loading, the project is restored from normal browser-local persistence.
+- The server owns the shared active project and original DXF files. Browser
+  storage is a cache/recovery draft.
 - The FreeCAD selection must be exportable by FreeCAD's DXF exporter
   (`importDXF.export` or `Draft.export` fallback).
 - For 3D bodies, select a planar sketch/profile whenever possible; arbitrary 3D

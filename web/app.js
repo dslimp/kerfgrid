@@ -1,4 +1,6 @@
 import { downloadText, fileSafeName, postJson } from "./js/http.js";
+import { SharedWorkspace } from "./js/workspace.js";
+import { completedCutPaths, pointAtTime, pointsUntilTime } from "./js/simulation.js";
 import {
   boundedHoleRadius,
   boxInside,
@@ -50,8 +52,9 @@ import {
   const undoBtn = document.getElementById("undoBtn");
   const redoBtn = document.getElementById("redoBtn");
   const storageKey = "kerfgrid.project.v1";
+  const migrationBackupKey = "kerfgrid.project.before-shared.v1";
   const projectFormat = "kerfgrid-project";
-  const projectFormatVersion = 1;
+  const projectFormatVersion = 2;
   const autoNestUiTimeoutGraceS = 3;
   const cutOrderStrategies = new Set(["nearest", "lower_left", "heat_spread"]);
   const layerMappingModes = new Set(["heuristic", "cut_all", "mapped_only"]);
@@ -88,8 +91,8 @@ import {
     templateBoltCount: document.getElementById("templateBoltCount"),
     templateBoltCircleDia: document.getElementById("templateBoltCircleDia"),
     templateBoltDia: document.getElementById("templateBoltDia"),
-    sheetMargin: document.getElementById("sheetMargin"),
     spacing: document.getElementById("spacing"),
+    nestLayoutMode: document.getElementById("nestLayoutMode"),
     nestAttempts: document.getElementById("nestAttempts"),
     nestAngleStep: document.getElementById("nestAngleStep"),
     nestMaxRuntime: document.getElementById("nestMaxRuntime"),
@@ -109,7 +112,6 @@ import {
     cutOrderStrategy: document.getElementById("cutOrderStrategy"),
     optimizeCutOrder: document.getElementById("optimizeCutOrder"),
     keepPartContoursTogether: document.getElementById("keepPartContoursTogether"),
-    avoidCompletedContours: document.getElementById("avoidCompletedContours"),
     heatSpreadWeight: document.getElementById("heatSpreadWeight"),
     heatLookback: document.getElementById("heatLookback"),
     cutOrderGroups: document.getElementById("cutOrderGroups"),
@@ -151,6 +153,7 @@ import {
   let simulation = emptySimulation();
   let cutOrderPreview = [];
   let importing = false;
+  let validatedLayout = null;
   let pendingImportMode = "any";
   let importLayerMappingErrors = [];
   let pendingExportApprovalSignature = null;
@@ -164,10 +167,33 @@ import {
   let historyRestoring = false;
   const rotateHandleRadiusPx = 8;
   const rotateHandleGapPx = 28;
-  const sheetFitGuardMm = 0.25;
   const historyLimit = 50;
   const importAcceptAny = ".json,.kerfgrid.json,.dxf";
   const importAcceptProject = ".json,.kerfgrid.json,application/json";
+  const sharedWorkspace = new SharedWorkspace({
+    onProject(value) {
+      undoStack = [];
+      redoStack = [];
+      pendingControlHistory = null;
+      activateLoadedProject(value, "");
+      updateHistoryControls();
+    },
+    onState({ status, files = [], conflict = false }) {
+      document.getElementById("workspaceStatus").textContent = status;
+      document.getElementById("workspaceConflict").hidden = !conflict;
+      const list = document.getElementById("workspaceFiles");
+      list.replaceChildren();
+      for (const file of files) {
+        const link = document.createElement("a");
+        link.href = `/api/workspace/files/${encodeURIComponent(file.id)}`;
+        link.textContent = file.filename;
+        link.download = file.filename;
+        list.append(link);
+      }
+      if (!files.length) list.textContent = "No uploaded files";
+    },
+    isBusy: () => Boolean(dragging || autoNesting || importing || couponImporting || pendingControlHistory),
+  });
 
   function keyForPlacement(placement) {
     return `${placement.part_name}_${placement.instance}`;
@@ -234,13 +260,13 @@ import {
   function normalizeProject(value) {
     if (!value || typeof value !== "object") return null;
     value.format = value.format || projectFormat;
-    value.format_version = Number(value.format_version || projectFormatVersion);
+    value.format_version = projectFormatVersion;
     value.sheet = {
       width_mm: 1000,
       height_mm: 500,
-      margin_mm: 10,
       ...(value.sheet || {}),
     };
+    delete value.sheet.margin_mm;
     value.spacing_mm = Number(value.spacing_mm ?? 8);
     value.cut = {
       material: "mild_steel",
@@ -294,7 +320,8 @@ import {
       precision: 3,
       ...postInput,
     };
-    value.post.avoid_completed_contours = value.post.avoid_completed_contours !== false;
+    value.post.safe_travel = value.post.safe_travel !== false && value.post.avoid_completed_contours !== false;
+    value.post.avoid_completed_contours = true;
     value.post.optimize_cut_order = value.post.optimize_cut_order !== false;
     value.post.keep_part_contours_together = value.post.keep_part_contours_together !== false;
     value.post.cut_order_strategy = normalizeCutOrderStrategy(value.post.cut_order_strategy);
@@ -355,6 +382,7 @@ import {
       ? value.nesting.run_history.map(normalizeNestRun).filter(Boolean).slice(-20)
       : [];
     value.nesting.auto_nest_attempts = Math.max(1, Math.min(240, Math.round(Number(value.nesting.auto_nest_attempts || 12))));
+    value.nesting.layout_mode = value.nesting.layout_mode === "compact" ? "compact" : "strip";
     value.nesting.auto_nest_angle_step_deg = Math.max(1, Math.min(90, Number(value.nesting.auto_nest_angle_step_deg || 30)));
     value.nesting.auto_nest_max_runtime_s = Math.max(1, Math.min(120, Number(value.nesting.auto_nest_max_runtime_s || 12)));
     value.nesting.auto_nest_parallel_workers = Math.max(0, Math.min(16, Math.round(Number(value.nesting.auto_nest_parallel_workers ?? 0))));
@@ -482,7 +510,7 @@ import {
       cut_height_mm: Math.max(0, Number(row.cut_height_mm ?? 1.5)),
       arc_voltage_v: nullableNumber(row.arc_voltage_v ?? row.cut_volts),
       thc_enabled: row.thc_enabled !== false,
-      air_pressure_bar: Math.max(0, Number(row.air_pressure_bar ?? 5.5)),
+      air_pressure_bar: Math.max(0, Number(row.air_pressure_bar ?? 5.0)),
       small_hole_threshold_mm: Math.max(0, Number(row.small_hole_threshold_mm ?? 37)),
       small_shape_threshold_mm: Math.max(0, Number(row.small_shape_threshold_mm ?? row.small_hole_threshold_mm ?? 37)),
       small_hole_speed_percent: Math.max(1, Math.min(100, Number(row.small_hole_speed_percent ?? 65))),
@@ -507,15 +535,16 @@ import {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  function saveProject() {
+  function saveProject({ publish = true } = {}) {
     if (!project) return;
     try {
       project.format = projectFormat;
       project.format_version = projectFormatVersion;
       localStorage.setItem(storageKey, JSON.stringify(project));
     } catch (error) {
-      setStatus("Save skipped");
+      document.getElementById("workspaceStatus").textContent = "Local cache unavailable";
     }
+    if (publish) sharedWorkspace.queue(project);
   }
 
   function cloneProjectState(value) {
@@ -691,17 +720,6 @@ import {
     window.history.replaceState({}, "", url);
   }
 
-  async function loadPendingProject() {
-    if (!pendingProjectRequested()) return null;
-    const response = await fetch("/api/pending-project", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Pending project request failed: HTTP ${response.status}`);
-    }
-    const payload = await response.json();
-    if (!payload || !payload.project) return null;
-    return normalizeProject(payload.project);
-  }
-
   function activateLoadedProject(loadedProject, statusText) {
     project = normalizeProject(loadedProject);
     syncAllPartQuantities();
@@ -713,7 +731,7 @@ import {
     issuesEl.textContent = "";
     saveProject();
     draw();
-    validateProject();
+    validateProject({ persist: false });
     if (statusText) setStatus(statusText);
   }
 
@@ -730,8 +748,8 @@ import {
     controls.templateBoltCount.value = project.template_defaults.bolt_count;
     controls.templateBoltCircleDia.value = project.template_defaults.bolt_circle_dia_mm;
     controls.templateBoltDia.value = project.template_defaults.bolt_hole_dia_mm;
-    controls.sheetMargin.value = project.sheet.margin_mm;
     controls.spacing.value = project.spacing_mm;
+    controls.nestLayoutMode.value = project.nesting.layout_mode;
     controls.nestAttempts.value = project.nesting.auto_nest_attempts;
     controls.nestAngleStep.value = project.nesting.auto_nest_angle_step_deg;
     controls.nestMaxRuntime.value = project.nesting.auto_nest_max_runtime_s;
@@ -741,6 +759,10 @@ import {
     controls.commonLineCutting.checked = Boolean(project.nesting.common_line_cutting);
     controls.safeTravel.checked = Boolean(project.post.safe_travel);
     controls.travelClearance.value = project.post.travel_clearance_mm;
+    controls.travelClearance.disabled = !project.post.safe_travel;
+    document.getElementById("travelModeInfo").textContent = project.post.safe_travel
+      ? "Обход деталей и зон. Если пути нет — пауза M0 перед проблемным переходом."
+      : "Прямые переходы: вырезанные детали и зоны не обходятся.";
     controls.thickness.value = project.cut.thickness_mm;
     controls.nozzle.value = project.cut.nozzle_mm;
     controls.feedMode.value = project.cut.feed_rate_mode;
@@ -751,7 +773,6 @@ import {
     controls.cutOrderStrategy.value = normalizeCutOrderStrategy(project.post.cut_order_strategy);
     controls.optimizeCutOrder.checked = Boolean(project.post.optimize_cut_order);
     controls.keepPartContoursTogether.checked = Boolean(project.post.keep_part_contours_together);
-    controls.avoidCompletedContours.checked = Boolean(project.post.avoid_completed_contours);
     controls.heatSpreadWeight.value = project.post.heat_spread_weight;
     controls.heatLookback.value = project.post.heat_lookback;
     controls.cutOrderGroups.value = formatCutOrderGroups(project.post.cut_order_groups);
@@ -798,8 +819,8 @@ import {
       bolt_circle_dia_mm: controls.templateBoltCircleDia.value,
       bolt_hole_dia_mm: controls.templateBoltDia.value,
     });
-    project.sheet.margin_mm = Number(controls.sheetMargin.value);
     project.spacing_mm = Number(controls.spacing.value);
+    project.nesting.layout_mode = controls.nestLayoutMode.value;
     project.nesting.auto_nest_attempts = Math.max(1, Math.min(240, Math.round(Number(controls.nestAttempts.value || 12))));
     project.nesting.auto_nest_angle_step_deg = Math.max(1, Math.min(90, Number(controls.nestAngleStep.value || 30)));
     project.nesting.auto_nest_max_runtime_s = Math.max(1, Math.min(120, Number(controls.nestMaxRuntime.value || 12)));
@@ -808,6 +829,10 @@ import {
     project.nesting.allow_hole_filler = Boolean(controls.allowHoleFiller.checked);
     project.nesting.common_line_cutting = Boolean(controls.commonLineCutting.checked);
     project.post.safe_travel = Boolean(controls.safeTravel.checked);
+    controls.travelClearance.disabled = !project.post.safe_travel;
+    document.getElementById("travelModeInfo").textContent = project.post.safe_travel
+      ? "Обход деталей и зон. Если пути нет — пауза M0 перед проблемным переходом."
+      : "Прямые переходы: вырезанные детали и зоны не обходятся.";
     project.post.travel_clearance_mm = Number(controls.travelClearance.value);
     project.cut.thickness_mm = Number(controls.thickness.value);
     project.cut.nozzle_mm = Number(controls.nozzle.value);
@@ -819,7 +844,7 @@ import {
     project.post.cut_order_strategy = normalizeCutOrderStrategy(controls.cutOrderStrategy.value);
     project.post.optimize_cut_order = Boolean(controls.optimizeCutOrder.checked);
     project.post.keep_part_contours_together = Boolean(controls.keepPartContoursTogether.checked);
-    project.post.avoid_completed_contours = Boolean(controls.avoidCompletedContours.checked);
+    project.post.avoid_completed_contours = true;
     project.post.heat_spread_weight = Math.max(0, Number(controls.heatSpreadWeight.value || 0));
     project.post.heat_lookback = Math.max(1, Math.min(20, Math.round(Number(controls.heatLookback.value || 3))));
     project.post.cut_order_groups = normalizeCutOrderGroups(controls.cutOrderGroups.value);
@@ -1166,18 +1191,6 @@ import {
     };
   }
 
-  function annotateImportedParts(imported, fileName) {
-    const sourceImport = imported.import || {};
-    const sourceIssues = Array.isArray(sourceImport.issues) ? sourceImport.issues : [];
-    for (const part of imported.parts) {
-      part.source_part_name = part.source_part_name || part.name;
-      part.source_file = fileName;
-      part.import_source = sourceImport.source || "dxf";
-      part.import_issues = sourceIssues;
-      part.import_partial = Boolean(sourceImport.partial || sourceIssues.length);
-    }
-  }
-
   function uniquePartName(name, usedNames) {
     const base = String(name || "part").replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "part";
     if (!usedNames.has(base)) {
@@ -1191,29 +1204,6 @@ import {
     const value = `${base}_${index}`;
     usedNames.add(value);
     return value;
-  }
-
-  function renamePartInProject(value, oldName, newName) {
-    for (const part of value.parts) {
-      if (part.name === oldName) {
-        part.name = newName;
-        part.source_part_name = part.source_part_name || oldName;
-      }
-    }
-    for (const placement of value.placements) {
-      if (placement.part_name === oldName) {
-        placement.part_name = newName;
-      }
-    }
-  }
-
-  function isDemoProject(value) {
-    return (
-      value &&
-      value.name === "circle_with_center_hole" &&
-      value.parts.length === 1 &&
-      value.parts[0].name === "disk"
-    );
   }
 
   function setupTabs() {
@@ -1357,13 +1347,14 @@ import {
     if (!placement || !part) return null;
     const key = keyForPlacement(placement);
     const box = placementWorldBounds(part, placement);
-    const usable = usableSheetBounds({ guard: false });
+    const usable = usableSheetBounds();
     if (!boxInside(box, usable)) {
-      return { code: "sheet_bounds", message: "outside sheet/margin" };
+      return { code: "sheet_bounds", message: "outside sheet" };
     }
 
     const spacing = effectivePreviewSpacing();
-    for (const other of project.placements || []) {
+    const checkPartBounds = !validatedLayout || validatedLayout.signature !== layoutGeometrySignature() || validatedLayout.possibleCollision;
+    for (const other of checkPartBounds ? project.placements || [] : []) {
       const otherKey = keyForPlacement(other);
       if (otherKey === key) continue;
       const otherPart = partDef(other.part_name);
@@ -1386,15 +1377,16 @@ import {
     return null;
   }
 
-  function usableSheetBounds(options = {}) {
-    const margin = Number(project.sheet.margin_mm || 0);
-    const guard = options.guard === false ? 0 : sheetFitGuardMm;
-    const guardedMargin = margin + guard;
+  function layoutGeometrySignature() {
+    return JSON.stringify([project.sheet, project.spacing_mm, project.nesting?.common_line_cutting, project.parts, project.placements, project.zones]);
+  }
+
+  function usableSheetBounds() {
     return {
-      minX: guardedMargin,
-      minY: guardedMargin,
-      maxX: Number(project.sheet.width_mm || 0) - guardedMargin,
-      maxY: Number(project.sheet.height_mm || 0) - guardedMargin,
+      minX: 0,
+      minY: 0,
+      maxX: Number(project.sheet.width_mm || 0),
+      maxY: Number(project.sheet.height_mm || 0),
     };
   }
 
@@ -1578,16 +1570,6 @@ import {
     ctx.lineWidth = 1;
     ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x, y, w, h);
-
-    const margin = project.sheet.margin_mm;
-    if (margin > 0) {
-      const a = worldToScreen({ x: margin, y: margin });
-      const b = worldToScreen({ x: sheetW - margin, y: sheetH - margin });
-      ctx.strokeStyle = "#d14b42";
-      ctx.setLineDash([6, 5]);
-      ctx.strokeRect(a.x, b.y, b.x - a.x, a.y - b.y);
-      ctx.setLineDash([]);
-    }
 
     ctx.strokeStyle = "#eef1f4";
     ctx.lineWidth = 1;
@@ -2203,17 +2185,17 @@ import {
     }
 
     const completed = pointsUntilTime(simulation.points, simulation.currentTime);
-    if (completed.length > 1) {
+    const cutPaths = completedCutPaths(completed);
+    if (cutPaths.length) {
       ctx.strokeStyle = "#c9482d";
       ctx.lineWidth = 3;
       ctx.setLineDash([]);
       ctx.beginPath();
-      for (let index = 0; index < completed.length; index += 1) {
-        const screen = worldToScreen(completed[index]);
-        if (index === 0) {
-          ctx.moveTo(screen.x, screen.y);
-        } else {
-          ctx.lineTo(screen.x, screen.y);
+      for (const path of cutPaths) {
+        for (let index = 0; index < path.length; index += 1) {
+          const screen = worldToScreen(path[index]);
+          if (index === 0) ctx.moveTo(screen.x, screen.y);
+          else ctx.lineTo(screen.x, screen.y);
         }
       }
       ctx.stroke();
@@ -2310,44 +2292,6 @@ import {
     ctx.fill();
     ctx.stroke();
     ctx.restore();
-  }
-
-  function pointsUntilTime(points, time) {
-    if (!points.length) return [];
-    const output = [];
-    for (const point of points) {
-      if (point.t <= time) {
-        output.push(point);
-      } else {
-        break;
-      }
-    }
-    const current = pointAtTime(points, time);
-    if (current && (!output.length || output[output.length - 1].t < time)) {
-      output.push(current);
-    }
-    return output;
-  }
-
-  function pointAtTime(points, time) {
-    if (!points.length) return null;
-    if (time <= points[0].t) return points[0];
-    const last = points[points.length - 1];
-    if (time >= last.t) return last;
-    for (let index = 1; index < points.length; index += 1) {
-      const point = points[index];
-      if (point.t >= time) {
-        const prev = points[index - 1];
-        const span = point.t - prev.t || 1;
-        const ratio = (time - prev.t) / span;
-        return {
-          x: prev.x + (point.x - prev.x) * ratio,
-          y: prev.y + (point.y - prev.y) * ratio,
-          t: time,
-        };
-      }
-    }
-    return last;
   }
 
   function rotateHandlePoint(placement, part) {
@@ -2556,6 +2500,7 @@ import {
       return;
     }
     nestingInfoEl.textContent = [
+      result.layout_mode === "compact" ? "Компактно от нуля" : "В линию вдоль X",
       `${result.successful_attempt_count}/${result.attempt_count} runs${result.time_limited ? " (time limit)" : ""}`,
       `Packing ${formatPercent(result.packing_utilization_percent)}, sheet ${formatPercent(result.sheet_utilization_percent)}`,
       `Used ${formatMm(result.used_width_mm)} x ${formatMm(result.used_height_mm)}, top free ${formatMm(result.top_free_height_mm)}`,
@@ -3500,12 +3445,15 @@ import {
     return 0;
   }
 
-  async function validateProject() {
+  async function validateProject({ persist = true } = {}) {
     const validationStatusVersion = statusVersion;
     syncProjectFromControls();
-    saveProject();
-    refreshCutSettings();
+    saveProject({ publish: persist });
+    refreshCutSettings({ persist });
+    const requestedProject = project;
+    const requestedGeometry = layoutGeometrySignature();
     const result = await postJson("/api/validate", project);
+    if (project !== requestedProject || requestedGeometry !== layoutGeometrySignature()) return;
     if (result.error) {
       issuesEl.textContent = `${result.type}: ${result.error}`;
       if (statusVersion === validationStatusVersion) {
@@ -3513,6 +3461,11 @@ import {
       }
       return;
     }
+    validatedLayout = {
+      signature: requestedGeometry,
+      possibleCollision: result.issues.some((issue) => issue.code === "part_collision" || issue.code === "layout_complexity"),
+    };
+    updateSelectedInfo();
     issuesEl.textContent = result.issues.length
       ? result.issues.map(formatIssueLine).join("\n")
       : "No issues";
@@ -3544,9 +3497,12 @@ import {
     return `${issue.code}: ${issue.message}${suffix}`;
   }
 
-  async function refreshCutSettings() {
+  async function refreshCutSettings({ persist = true } = {}) {
     if (!project) return;
+    const requestedProject = project;
+    const requestedSettings = JSON.stringify([project.cut, project.cut_chart, project.post.small_feature_source]);
     const result = await postJson("/api/cut-settings", project);
+    if (project !== requestedProject || requestedSettings !== JSON.stringify([project.cut, project.cut_chart, project.post.small_feature_source])) return;
     if (result.error) {
       cutSettingsInfoEl.textContent = `${result.type}: ${result.error}`;
       return;
@@ -3568,7 +3524,7 @@ import {
     if (project.cut.feed_rate_mode !== "manual") {
       project.cut.manual_feed_rate_mm_min = result.feed_rate_mm_min;
       controls.manualFeed.value = result.feed_rate_mm_min;
-      saveProject();
+      saveProject({ publish: persist });
     }
     if (project.post.small_feature_source === "cut_chart") {
       project.post.small_hole_threshold_mm = Number(result.small_hole_threshold_mm ?? project.post.small_hole_threshold_mm);
@@ -3579,7 +3535,7 @@ import {
         result.small_hole_torch_off_before_end_mm ?? project.post.small_hole_torch_off_before_end_mm
       );
       syncControlsFromProject();
-      saveProject();
+      saveProject({ publish: persist });
     }
     markActiveCutChartRow(result);
   }
@@ -4195,9 +4151,11 @@ import {
 
   function simulationSummary(data) {
     const unsafeRapid = (data.segments || []).filter((segment) => segment.safe_travel_warning);
+    const pauses = (data.segments || []).filter((segment) => segment.operator_pause_before);
     return [
       `Cut ${data.estimated_cut_s.toFixed(1)}s, rapid ${data.estimated_rapid_s.toFixed(1)}s, pierce ${(data.estimated_pierce_s || 0).toFixed(1)}s`,
       unsafeRapid.length ? `Unsafe rapid warnings ${unsafeRapid.length}` : null,
+      pauses.length ? `Остановки M0: ${pauses.length}. Перед продолжением освободить путь.` : null,
       `Feed ${data.feed_rate_mm_min} mm/min, x${project.simulation.playback_rate}`,
     ].filter(Boolean).join("\n");
   }
@@ -4250,94 +4208,6 @@ import {
     importFileEl.click();
   }
 
-  function replaceWithImportedProject(imported, fileName) {
-    annotateImportedParts(imported, fileName);
-    project = imported;
-    syncAllPartQuantities();
-    rebuildProjectImportState();
-    return { added: project.parts.length, updated: 0, autoLeadsCleared: 0 };
-  }
-
-  function clearAutoLeadOverridesForParts(partNames) {
-    const names = new Set(partNames);
-    if (!names.size || !Array.isArray(project.lead_overrides)) return 0;
-    const prefixes = project.placements
-      .filter((placement) => names.has(placement.part_name))
-      .map((placement) => `${keyForPlacement(placement)}_`);
-    let removed = 0;
-    project.lead_overrides = project.lead_overrides.filter((override) => {
-      if (!override.auto_generated) return true;
-      const contourName = String(override.contour_name || "");
-      const matches = prefixes.some((prefix) => contourName.startsWith(prefix));
-      if (matches) removed += 1;
-      return !matches;
-    });
-    return removed;
-  }
-
-  function mergeImportedProject(imported, fileName) {
-    annotateImportedParts(imported, fileName);
-    const usedNames = new Set(project.parts.map((part) => part.name));
-    const addedParts = [];
-    const updatedParts = [];
-    const importedParts = [...imported.parts];
-    for (const part of importedParts) {
-      const sourceName = part.source_part_name || part.name;
-      const existingIndex = project.parts.findIndex(
-        (candidate) =>
-          candidate.source_file === part.source_file &&
-          (candidate.source_part_name || candidate.name) === sourceName
-      );
-      if (existingIndex < 0) {
-        addedParts.push(part);
-        continue;
-      }
-      const existing = project.parts[existingIndex];
-      project.parts[existingIndex] = {
-        ...part,
-        name: existing.name,
-        source_part_name: sourceName,
-        quantity: Math.max(1, placementCount(existing.name)),
-        allowed_rotations: [...(existing.allowed_rotations || [0, 90, 180, 270])],
-        grain_lock: Boolean(existing.grain_lock),
-      };
-      updatedParts.push(existing.name);
-    }
-    for (const part of importedParts) {
-      if (!addedParts.includes(part)) continue;
-      const oldName = part.name;
-      const newName = uniquePartName(oldName, usedNames);
-      if (oldName !== newName) {
-        renamePartInProject(imported, oldName, newName);
-      }
-    }
-
-    let lastPlacement = null;
-    for (const part of addedParts) {
-      const desiredQuantity = Math.max(1, Math.round(Number(part.quantity || 1)));
-      part.quantity = desiredQuantity;
-      project.parts.push(part);
-      if (!isDisplayablePart(part)) {
-        syncPartQuantity(part.name);
-        continue;
-      }
-      for (let index = 0; index < desiredQuantity; index += 1) {
-        const placement = defaultPlacementForPart(part, nextInstance(part.name));
-        placement.manual = false;
-        project.placements.push(placement);
-        lastPlacement = placement;
-      }
-      syncPartQuantity(part.name);
-    }
-    selectedKey = lastPlacement ? keyForPlacement(lastPlacement) : selectedKey;
-    for (const partName of updatedParts) {
-      syncPartQuantity(partName);
-    }
-    const autoLeadsCleared = clearAutoLeadOverridesForParts(updatedParts);
-    rebuildProjectImportState();
-    return { added: addedParts.length, updated: updatedParts.length, autoLeadsCleared };
-  }
-
   async function loadExample() {
     const history = project ? captureMutationHistory() : null;
     const response = await fetch("/api/example");
@@ -4357,23 +4227,20 @@ import {
 
   async function loadInitialProject() {
     try {
-      const pendingProject = await loadPendingProject();
-      clearPendingProjectRequest();
-      if (pendingProject) {
-        activateLoadedProject(pendingProject, "Loaded FreeCAD project");
-        return;
-      }
+      const raw = localStorage.getItem(storageKey);
+      if (raw && !localStorage.getItem(migrationBackupKey)) localStorage.setItem(migrationBackupKey, raw);
+      document.getElementById("localProjectBackupBtn").hidden = !localStorage.getItem(migrationBackupKey);
     } catch (error) {
-      clearPendingProjectRequest();
-      issuesEl.textContent = `${error.name || "Error"}: ${error.message || error}`;
-      setStatus("FreeCAD load failed");
+      document.getElementById("localProjectBackupBtn").hidden = true;
     }
-    const stored = loadStoredProject();
-    if (stored) {
-      activateLoadedProject(stored, "");
-      return;
-    }
-    await loadExample();
+    clearPendingProjectRequest();
+    await sharedWorkspace.start(async () => {
+      const stored = loadStoredProject();
+      if (stored) return stored;
+      const response = await fetch("/api/example");
+      if (!response.ok) throw new Error(`Example request failed: HTTP ${response.status}`);
+      return normalizeProject(await response.json());
+    });
   }
 
   async function importSelectedFile(options = {}) {
@@ -4414,7 +4281,7 @@ import {
           ...project,
           import_options: importPlan.importOptions,
         };
-        const result = await postJson("/api/import-dxf", {
+        const result = await sharedWorkspace.importDxf({
           filename: file.name,
           content: importPlan.content,
           base_project: baseProject,
@@ -4427,15 +4294,8 @@ import {
           return;
         }
         const uiImportOptions = importPlan.uiImportOptions || project.import_options || {};
-        const imported = normalizeProject({
-          ...result,
-          import_options: uiImportOptions,
-        });
-        if (!project || isDemoProject(project)) {
-          importSummary = replaceWithImportedProject(imported, file.name);
-        } else {
-          importSummary = mergeImportedProject(imported, file.name);
-        }
+        project = normalizeProject({ ...result.project, import_options: uiImportOptions });
+        importSummary = { ...result.import_summary, autoLeadsCleared: result.import_summary.auto_leads_cleared };
       } else {
         issuesEl.textContent = mode === "project"
           ? `Project file must be .json: ${file.name}`
@@ -4687,6 +4547,12 @@ import {
   if (couponResultsFileEl) couponResultsFileEl.addEventListener("change", loadCouponResultsFile);
   window.addEventListener("keydown", handleKeyboard);
   window.addEventListener("resize", draw);
+  document.getElementById("workspaceReloadBtn").addEventListener("click", () => sharedWorkspace.resolve(false));
+  document.getElementById("workspaceKeepLocalBtn").addEventListener("click", () => sharedWorkspace.resolve(true));
+  document.getElementById("localProjectBackupBtn").addEventListener("click", () => {
+    const raw = localStorage.getItem(migrationBackupKey);
+    if (raw) downloadText("kerfgrid-before-shared.kerfgrid.json", raw, "application/json");
+  });
 
   setupTabs();
   loadCutChart();

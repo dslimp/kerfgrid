@@ -52,6 +52,7 @@ def segments_from_gcode(
     torch_on = False
     speed_percent = 100.0
     thc_disabled = False
+    operator_pause = False
     segments: list[dict[str, Any]] = []
     for raw_line in gcode.splitlines():
         code = _strip_comments(raw_line).strip().upper()
@@ -60,7 +61,9 @@ def segments_from_gcode(
         words = _words(code)
         if "M" in words:
             m_code = int(words["M"])
-            if m_code == 3:
+            if m_code == 0:
+                operator_pause = True
+            elif m_code == 3:
                 torch_on = True
                 segments.append(
                     {
@@ -122,11 +125,13 @@ def segments_from_gcode(
                     "thc_disabled": thc_disabled,
                     "safe_travel": segment_type == "rapid" and "safe rapid" in raw_lower,
                     "safe_travel_warning": safe_travel_warning,
+                    "operator_pause_before": operator_pause,
                     "safe_travel_warning_message": _extract_comment(raw_line) if safe_travel_warning else None,
                     "tab_bridge": segment_type == "rapid" and "tab bridge skip" in raw_lower,
                     "points": [{"x": round(point["x"], 4), "y": round(point["y"], 4)} for point in points],
                 }
             )
+        operator_pause = False
         current = target
     return segments
 

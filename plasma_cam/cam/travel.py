@@ -1,20 +1,24 @@
-"""Safe rapid routing around rectangular travel obstacles."""
+"""Route rapids around fixed obstacles and completed cutouts."""
 
 from __future__ import annotations
 
 import math
+import heapq
+from dataclasses import dataclass
+from functools import lru_cache
 import re
 from typing import Iterable
 
 try:
-    from shapely.geometry import LineString, box
+    from shapely.geometry import LineString, Polygon, Point as ShapePoint, box
+    from shapely.ops import unary_union
 except ModuleNotFoundError:
     LineString = None
     box = None
+    Polygon = None
 
-from ..model import Contour, Point
-from .gcode import format_number, gcode_line
-from .geometry import segments_intersect
+from ..model import ArcSegment, CircleContour, Contour, PathContour, Point
+from .gcode import comment_text, format_number, gcode_line
 from .options import QtPlasmaCOptions, TravelObstacle
 
 
@@ -46,202 +50,226 @@ def motion_target_from_line(line: str, current: Point) -> Point | None:
     return Point(float(words.get("X", current.x)), float(words.get("Y", current.y)))
 
 
-def safe_rapid_lines(
-    start: Point,
-    end: Point,
-    obstacles: list[TravelObstacle],
-    options: QtPlasmaCOptions,
-    comment: str | None,
-) -> list[str]:
+@dataclass(frozen=True)
+class _Region:
+    shape: object
+    core: object
+    completed: bool
+
+
+_EPS = 1e-6
+
+
+def safe_rapid_lines(start, end, obstacles, options, comment):
     direct = f"G0 X{format_number(end.x, options.precision)} Y{format_number(end.y, options.precision)}"
-    if start.distance_to(end) <= 1e-9 or not options.safe_travel:
+    if start.distance_to(end) <= _EPS or not options.safe_travel:
         return [gcode_line(direct, comment, options)]
     if len(obstacles) > SAFE_TRAVEL_MAX_OBSTACLES:
-        return [gcode_line(direct, _complexity_warning(start, end, len(obstacles), comment, options), options)]
-    active = _expanded_obstacles(obstacles, options.travel_clearance)
-    if len(active) > SAFE_TRAVEL_MAX_OBSTACLES:
-        return [gcode_line(direct, _complexity_warning(start, end, len(active), comment, options), options)]
+        return _unresolved_rapid(direct, start, end, options, comment, f"obstacle set too complex ({len(obstacles)} obstacles)")
+    if LineString is None:
+        return _unresolved_rapid(direct, start, end, options, comment, "geometry routing unavailable") if obstacles else [gcode_line(direct, comment, options)]
+    clearance = options.travel_clearance + 2 * 10 ** -options.precision
+    active = _expanded_obstacles(obstacles, clearance)
     if not active or not _segment_blocked(start, end, active):
         return [gcode_line(direct, comment, options)]
     route = _safe_travel_route(start, end, active, options.travel_bounds)
     if route is None:
-        warning = f"WARNING: safe travel route blocked from {_point_label(start, options)} to {_point_label(end, options)}; using direct rapid"
-        if comment:
-            warning = f"{warning}; {comment}"
-        return [gcode_line(direct, warning, options)]
-    output = []
-    for index, point in enumerate(route[1:], start=1):
-        output.append(
-            gcode_line(
-                f"G0 X{format_number(point.x, options.precision)} Y{format_number(point.y, options.precision)}",
-                comment if index == len(route) - 1 else "safe rapid",
-                options,
-            )
-        )
-    return output
+        return _unresolved_rapid(direct, start, end, options, comment, "route blocked")
+    return [gcode_line(
+        f"G0 X{format_number(point.x, options.precision)} Y{format_number(point.y, options.precision)}",
+        comment if index == len(route) - 1 else "safe rapid", options,
+    ) for index, point in enumerate(route[1:], start=1)]
 
 
-def contour_obstacle(contour: Contour) -> TravelObstacle:
+def rapid_distance(start, end, obstacles, options):
+    if not options.safe_travel or not obstacles:
+        return start.distance_to(end)
+    if LineString is None or len(obstacles) > SAFE_TRAVEL_MAX_OBSTACLES:
+        return math.inf
+    active = _expanded_obstacles(obstacles, options.travel_clearance + 2 * 10 ** -options.precision)
+    if not _segment_blocked(start, end, active):
+        return start.distance_to(end)
+    route = _safe_travel_route(start, end, active, options.travel_bounds)
+    return math.inf if route is None else sum(a.distance_to(b) for a, b in zip(route, route[1:]))
+
+
+def _unresolved_rapid(direct, start, end, options, comment, reason):
+    warning = comment_text(f"WARNING: safe travel {reason}")[:76]
+    lines = ["M0 (Safe travel blocked: clear the route before resuming)",
+             "(using direct rapid after operator pause)"]
+    if comment and options.include_comments:
+        lines.append(f"({comment_text(comment)[:76]})")
+    return [*lines, f"{direct} ({warning})"]
+
+
+@lru_cache(maxsize=2048)
+def contour_obstacle(contour: Contour) -> TravelObstacle | None:
+    if isinstance(contour, PathContour) and not contour.is_closed():
+        return None
     xmin, ymin, xmax, ymax = contour.bbox()
-    return TravelObstacle(xmin, ymin, xmax, ymax, contour.name)
+    if isinstance(contour, CircleContour):
+        count = 24
+        radius = contour.radius / math.cos(math.pi / count)
+        outline = tuple(Point(contour.center.x + radius * math.cos(math.tau * i / count),
+                              contour.center.y + radius * math.sin(math.tau * i / count)) for i in range(count))
+    else:
+        outline = tuple(contour.points(max_chord=2.0))
+        if len(outline) < 3:
+            return None
+        if Polygon is not None:
+            padding = 0.0
+            for segment in contour.segments:
+                if isinstance(segment, ArcSegment):
+                    points = segment.points(max_chord=2.0)
+                    padding = max(padding, max(segment.radius - math.hypot((a.x + b.x) / 2 - segment.center.x,
+                                                                           (a.y + b.y) / 2 - segment.center.y)
+                                               for a, b in zip(points, points[1:])))
+            polygon = Polygon([(p.x, p.y) for p in outline])
+            if polygon.is_valid and padding > 0:
+                outline = tuple(Point(x, y) for x, y in polygon.buffer(padding, join_style=2).exterior.coords[:-1])
+    return TravelObstacle(xmin, ymin, xmax, ymax, contour.name, outline, True)
 
 
-def _complexity_warning(
-    start: Point,
-    end: Point,
-    count: int,
-    comment: str | None,
-    options: QtPlasmaCOptions,
-) -> str:
-    warning = (
-        f"WARNING: safe travel obstacle set too complex ({count} obstacles); "
-        f"using direct rapid from {_point_label(start, options)} to {_point_label(end, options)}"
-    )
-    return f"{warning}; {comment}" if comment else warning
-
-
-def _expanded_obstacles(obstacles: Iterable[TravelObstacle], clearance: float) -> list[TravelObstacle]:
-    return [obstacle.expanded(clearance) for obstacle in obstacles if obstacle.xmax > obstacle.xmin and obstacle.ymax > obstacle.ymin]
-
-
-def _point_label(point: Point, options: QtPlasmaCOptions) -> str:
+def _point_label(point, options):
     return f"X{format_number(point.x, options.precision)} Y{format_number(point.y, options.precision)}"
 
 
-def _safe_travel_route(
-    start: Point,
-    end: Point,
-    obstacles: list[TravelObstacle],
-    bounds: tuple[float, float, float, float] | None,
-) -> list[Point] | None:
-    x_values = {round(start.x, 3), round(end.x, 3)}
-    y_values = {round(start.y, 3), round(end.y, 3)}
-    for obstacle in obstacles:
-        for value in (obstacle.xmin, obstacle.xmax):
-            _add_route_value(x_values, value, bounds[0], bounds[2]) if bounds else x_values.add(round(value, 3))
-        for value in (obstacle.ymin, obstacle.ymax):
-            _add_route_value(y_values, value, bounds[1], bounds[3]) if bounds else y_values.add(round(value, 3))
+@lru_cache(maxsize=4096)
+def _region(obstacle, clearance):
+    core = Polygon([(p.x, p.y) for p in obstacle.outline]) if obstacle.outline else box(obstacle.xmin, obstacle.ymin, obstacle.xmax, obstacle.ymax)
+    if not core.is_valid or core.is_empty or core.area <= 0:
+        core = box(obstacle.xmin, obstacle.ymin, obstacle.xmax, obstacle.ymax)
+    return _Region(core.buffer(clearance, join_style=2), core, obstacle.completed)
+
+
+def _expanded_obstacles(obstacles, clearance):
+    return [_region(obstacle, clearance) for obstacle in obstacles
+            if obstacle.xmax > obstacle.xmin and obstacle.ymax > obstacle.ymin]
+
+
+def _rings(shape):
+    for polygon in shape.geoms if hasattr(shape, 'geoms') else [shape]:
+        if polygon.geom_type == 'Polygon':
+            yield list(polygon.exterior.coords)
+            for ring in polygon.interiors:
+                yield list(ring.coords)
+
+
+def _inside_bounds(point, bounds):
+    return bounds is None or (bounds[0] - _EPS <= point.x <= bounds[2] + _EPS and bounds[1] - _EPS <= point.y <= bounds[3] + _EPS)
+
+
+def _safe_travel_route(start, end, obstacles, bounds):
+    return _cached_route(start, end, tuple(obstacles), bounds)
+
+
+@lru_cache(maxsize=512)
+def _cached_route(start, end, obstacles, bounds):
+    if not _inside_bounds(start, bounds) or not _inside_bounds(end, bounds):
+        return None
+    boundary = unary_union([obstacle.shape for obstacle in obstacles])
     if bounds is not None:
-        _add_route_value(x_values, bounds[0], bounds[0], bounds[2])
-        _add_route_value(x_values, bounds[2], bounds[0], bounds[2])
-        _add_route_value(y_values, bounds[1], bounds[1], bounds[3])
-        _add_route_value(y_values, bounds[3], bounds[1], bounds[3])
-    if len(x_values) * len(y_values) > SAFE_TRAVEL_MAX_ROUTE_NODES:
+        boundary = boundary.intersection(box(*bounds))
+    nodes = [start, end]
+    candidates = [Point(x, y) for ring in _rings(boundary) for x, y in ring[:-1]]
+    for endpoint in (start, end):
+        source = ShapePoint(endpoint.x, endpoint.y)
+        for obstacle in obstacles:
+            if not obstacle.completed or not obstacle.shape.contains(source):
+                continue
+            minimum = obstacle.shape.boundary.distance(source)
+            for ring in _rings(obstacle.shape):
+                for a, b in zip(ring, ring[1:]):
+                    edge = LineString([a, b])
+                    point = edge.interpolate(edge.project(source))
+                    if point.distance(source) <= minimum + _EPS:
+                        candidates.append(Point(point.x, point.y))
+    if bounds:
+        candidates.extend(Point(x, y) for x in (bounds[0], bounds[2]) for y in (bounds[1], bounds[3]))
+    seen = {(start.x, start.y), (end.x, end.y)}
+    for candidate in candidates:
+        key = (round(candidate.x, 8), round(candidate.y, 8))
+        if key not in seen and _inside_bounds(candidate, bounds):
+            nodes.append(candidate)
+            seen.add(key)
+    if len(nodes) > SAFE_TRAVEL_MAX_ROUTE_NODES:
         return None
-    nodes = _route_nodes(x_values, y_values, bounds)
-    start_index = _ensure_route_node(nodes, start)
-    end_index = _ensure_route_node(nodes, end)
     distances = [math.inf] * len(nodes)
-    previous: list[int | None] = [None] * len(nodes)
-    pending = set(range(len(nodes)))
-    distances[start_index] = 0.0
+    previous = [None] * len(nodes)
+    distances[0] = 0.0
+    pending = [(start.distance_to(end), 0.0, 0)]
+    visited = set()
     while pending:
-        current_index = min(pending, key=lambda item: distances[item])
-        if distances[current_index] == math.inf:
-            break
-        pending.remove(current_index)
-        if current_index == end_index:
-            break
-        current = nodes[current_index]
-        for neighbor_index in list(pending):
-            neighbor = nodes[neighbor_index]
-            if abs(current.x - neighbor.x) > 1e-6 and abs(current.y - neighbor.y) > 1e-6:
+        _, cost, index = heapq.heappop(pending)
+        if index in visited:
+            continue
+        if index == 1:
+            route = []
+            while index is not None:
+                route.append(nodes[index])
+                index = previous[index]
+            return tuple(_simplify_route(list(reversed(route)), obstacles))
+        visited.add(index)
+        for neighbor, point in enumerate(nodes):
+            if neighbor in visited or neighbor == index:
                 continue
-            if _segment_blocked(current, neighbor, obstacles):
+            distance = cost + nodes[index].distance_to(point)
+            if distance + _EPS >= distances[neighbor] or _segment_blocked(nodes[index], point, obstacles):
                 continue
-            cost = current.distance_to(neighbor)
-            if distances[current_index] + cost < distances[neighbor_index]:
-                distances[neighbor_index] = distances[current_index] + cost
-                previous[neighbor_index] = current_index
-    if distances[end_index] == math.inf:
-        return None
-    route = []
-    cursor: int | None = end_index
-    while cursor is not None:
-        route.append(nodes[cursor])
-        cursor = previous[cursor]
-    route.reverse()
-    return _simplify_route(route, obstacles)
+            distances[neighbor] = distance
+            previous[neighbor] = index
+            heapq.heappush(pending, (distance + point.distance_to(end), distance, neighbor))
+    return None
 
 
-def _add_route_value(values: set[float], value: float, minimum: float, maximum: float) -> None:
-    if minimum - 1e-6 <= value <= maximum + 1e-6:
-        values.add(round(min(max(value, minimum), maximum), 3))
-
-
-def _route_nodes(
-    x_values: set[float],
-    y_values: set[float],
-    bounds: tuple[float, float, float, float] | None,
-) -> list[Point]:
-    nodes = []
-    seen = set()
-    for x in sorted(x_values):
-        for y in sorted(y_values):
-            if bounds is not None and (x < bounds[0] - 1e-6 or x > bounds[2] + 1e-6 or y < bounds[1] - 1e-6 or y > bounds[3] + 1e-6):
-                continue
-            key = (round(x, 3), round(y, 3))
-            if key not in seen:
-                seen.add(key)
-                nodes.append(Point(key[0], key[1]))
-    return nodes
-
-
-def _ensure_route_node(nodes: list[Point], point: Point) -> int:
-    for index, node in enumerate(nodes):
-        if node.distance_to(point) <= 1e-6:
-            return index
-    nodes.append(point)
-    return len(nodes) - 1
-
-
-def _simplify_route(route: list[Point], obstacles: list[TravelObstacle]) -> list[Point]:
-    if len(route) <= 2:
-        return route
+def _simplify_route(route, obstacles):
     simplified = [route[0]]
     index = 0
     while index < len(route) - 1:
-        next_index = len(route) - 1
-        while next_index > index + 1 and _segment_blocked(route[index], route[next_index], obstacles):
-            next_index -= 1
-        simplified.append(route[next_index])
-        index = next_index
+        following = len(route) - 1
+        while following > index + 1 and _segment_blocked(route[index], route[following], obstacles):
+            following -= 1
+        simplified.append(route[following])
+        index = following
     return simplified
 
 
-def _segment_blocked(start: Point, end: Point, obstacles: list[TravelObstacle]) -> bool:
-    if start.distance_to(end) <= 1e-9:
+def _segment_blocked(start, end, obstacles):
+    if start.distance_to(end) <= _EPS:
         return False
+    line = LineString([(start.x, start.y), (end.x, end.y)])
+    source = ShapePoint(start.x, start.y)
+    target = ShapePoint(end.x, end.y)
+    xmin, ymin, xmax, ymax = line.bounds
     for obstacle in obstacles:
-        if _point_in_obstacle(start, obstacle) or _point_in_obstacle(end, obstacle):
+        left, bottom, right, top = obstacle.shape.bounds
+        if xmax < left or xmin > right or ymax < bottom or ymin > top:
             continue
-        if _segment_hits_obstacle(start, end, obstacle):
+        if line.relate_pattern(obstacle.shape, 'F********'):
+            continue
+        if not obstacle.completed:
+            return True
+        if not _endpoint_overlap_only(line, obstacle.shape, source, target, allow_entry=True):
+            return True
+        if not _endpoint_overlap_only(line, obstacle.core, source, target, allow_entry=False):
             return True
     return False
 
 
-def _point_in_obstacle(point: Point, obstacle: TravelObstacle) -> bool:
-    return obstacle.xmin - 1e-6 <= point.x <= obstacle.xmax + 1e-6 and obstacle.ymin - 1e-6 <= point.y <= obstacle.ymax + 1e-6
-
-
-def _segment_hits_obstacle(start: Point, end: Point, obstacle: TravelObstacle) -> bool:
-    if not _boxes_overlap(
-        (min(start.x, end.x), min(start.y, end.y), max(start.x, end.x), max(start.y, end.y)),
-        (obstacle.xmin, obstacle.ymin, obstacle.xmax, obstacle.ymax),
-    ):
+def _endpoint_overlap_only(line, shape, source, target, *, allow_entry):
+    if line.relate_pattern(shape, 'F********'):
+        return True
+    prefix = shape.boundary.distance(source) if shape.covers(source) else 0.0
+    suffix = shape.boundary.distance(target) if allow_entry and shape.covers(target) else 0.0
+    intersection = line.intersection(shape.buffer(-_EPS / 10))
+    for piece in intersection.geoms if hasattr(intersection, 'geoms') else [intersection]:
+        if piece.geom_type != 'LineString' or piece.length <= _EPS:
+            continue
+        positions = [line.project(ShapePoint(x, y)) for x, y in piece.coords]
+        a, b = min(positions), max(positions)
+        if a <= _EPS and b <= prefix + _EPS:
+            continue
+        if b >= line.length - _EPS and a >= line.length - suffix - _EPS:
+            continue
         return False
-    if LineString is not None and box is not None:
-        line = LineString([(start.x, start.y), (end.x, end.y)])
-        rect = box(obstacle.xmin, obstacle.ymin, obstacle.xmax, obstacle.ymax)
-        return not (line.disjoint(rect) or line.touches(rect))
-    corners = [
-        Point(obstacle.xmin, obstacle.ymin),
-        Point(obstacle.xmax, obstacle.ymin),
-        Point(obstacle.xmax, obstacle.ymax),
-        Point(obstacle.xmin, obstacle.ymax),
-    ]
-    return any(segments_intersect(start, end, corner, corners[(index + 1) % len(corners)]) for index, corner in enumerate(corners))
-
-
-def _boxes_overlap(left: tuple[float, float, float, float], right: tuple[float, float, float, float]) -> bool:
-    return not (left[2] <= right[0] or right[2] <= left[0] or left[3] <= right[1] or right[3] <= left[1])
+    return True

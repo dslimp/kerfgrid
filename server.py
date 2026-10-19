@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import threading
+import os
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, quote, urlparse
+
+from plasma_cam.application.workspace import WorkspaceConflict, WorkspaceStore
 
 from plasma_cam.web_api import (
     auto_nest_project,
@@ -32,8 +34,6 @@ from plasma_cam.web_api import (
 APP_DIR = Path(__file__).resolve().parent
 WEB_DIR = APP_DIR / "web"
 EXAMPLE_PATH = APP_DIR / "examples" / "circle-hole.project.json"
-_PENDING_PROJECT_LOCK = threading.Lock()
-_PENDING_PROJECT: dict | None = None
 
 
 class KerfGridHandler(SimpleHTTPRequestHandler):
@@ -47,12 +47,37 @@ class KerfGridHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/api/workspace":
+            try:
+                raw = parse_qs(parsed.query).get("after_revision", [None])[0]
+                after = int(raw) if raw is not None else None
+                self._send_json(self.server.workspace.snapshot(after))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if path == "/api/workspace/files":
+            self._send_json({"files": self.server.workspace.snapshot()["files"]})
+            return
+        if path.startswith("/api/workspace/files/"):
+            item = self.server.workspace.file(path.rsplit("/", 1)[-1])
+            if item is None:
+                self._send_json({"error": "File not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            body = item["content"].encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/dxf; charset=utf-8")
+            self.send_header("Content-Disposition", "attachment; filename*=UTF-8''" + quote(item["filename"], safe=""))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == "/api/example":
             self._send_json(json.loads(EXAMPLE_PATH.read_text(encoding="utf-8")))
             return
         if path == "/api/pending-project":
-            self._send_json({"project": _take_pending_project()})
+            self._send_json(self.server.workspace.snapshot())
             return
         if path == "/api/cut-chart":
             self._send_json({"profile": cut_chart_profile_metadata(), "rows": cut_chart_table()})
@@ -65,9 +90,15 @@ class KerfGridHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             project = self._read_json_body()
+            if path == "/api/workspace":
+                self._send_json(self.server.workspace.save(project.get("project"), project.get("expected_revision")))
+                return
+            if path == "/api/workspace/import-dxf":
+                self._send_json(self.server.workspace.import_dxf(project, import_dxf_project))
+                return
             if path == "/api/pending-project":
-                _set_pending_project(project.get("project", project))
-                self._send_json({"ok": True})
+                snapshot = self.server.workspace.publish_legacy(project.get("project", project))
+                self._send_json({"ok": True, **snapshot})
                 return
             if path == "/api/validate":
                 self._send_json({"issues": validate_project(project)})
@@ -135,6 +166,9 @@ class KerfGridHandler(SimpleHTTPRequestHandler):
                 self._send_json(import_dxf_project(project))
                 return
             self.send_error(HTTPStatus.NOT_FOUND, f"Unknown API path: {path}")
+        except WorkspaceConflict as exc:
+            self._send_json({"error": str(exc), "type": "WorkspaceConflict", "workspace": exc.workspace},
+                            status=HTTPStatus.CONFLICT)
         except Exception as exc:
             self._send_json(
                 {"error": str(exc), "type": type(exc).__name__},
@@ -162,25 +196,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the KerfGrid UI")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--state-dir", default=os.environ.get("KERFGRID_STATE_DIR", str(Path.home() / ".local/share/kerfgrid")))
     args = parser.parse_args()
 
-    server = ThreadingHTTPServer((args.host, args.port), KerfGridHandler)
+    server = create_server(args.host, args.port, args.state_dir)
     print(f"KerfGrid UI: http://{args.host}:{args.port}/")
     server.serve_forever()
 
 
-def _set_pending_project(project: dict) -> None:
-    global _PENDING_PROJECT
-    with _PENDING_PROJECT_LOCK:
-        _PENDING_PROJECT = project
-
-
-def _take_pending_project() -> dict | None:
-    global _PENDING_PROJECT
-    with _PENDING_PROJECT_LOCK:
-        project = _PENDING_PROJECT
-        _PENDING_PROJECT = None
-    return project
+def create_server(host: str, port: int, state_dir: str | Path) -> ThreadingHTTPServer:
+    server = ThreadingHTTPServer((host, port), KerfGridHandler)
+    server.workspace = WorkspaceStore(Path(state_dir) / "workspace.sqlite3")
+    return server
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ class TravelObstacle:
     xmax: float
     ymax: float
     label: str = "obstacle"
+    outline: tuple[Point, ...] = ()
+    completed: bool = False
 
     def expanded(self, clearance: float) -> "TravelObstacle":
         return TravelObstacle(
@@ -23,6 +25,7 @@ class TravelObstacle:
             self.xmax + clearance,
             self.ymax + clearance,
             self.label,
+            completed=self.completed,
         )
 
 

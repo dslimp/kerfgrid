@@ -43,7 +43,7 @@ from .application.project_codec import (
     segment_preview as _segment_preview,
     sheet_from_project as _sheet_from_project,
 )
-from .application.project_store import dump_project, load_project
+from .application.project_store import dump_project, load_project, normalize_project as _normalize_project
 from .application.linuxcnc_transfer import LinuxCNCGCodeFile, send_gcode_bundle_to_linuxcnc
 from .cut_settings import cut_chart_rows_from_dicts, default_cut_chart_profile, select_cut_settings
 from .importers.dxf import import_dxf_circles
@@ -143,7 +143,7 @@ def validate_project(project: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def auto_nest_project(project: dict[str, Any]) -> dict[str, Any]:
-    nested_project = deepcopy(project)
+    nested_project = deepcopy(_normalize_project(project))
     started_at = time.monotonic()
     deadline = started_at + _auto_nest_runtime_limit_s(nested_project)
     sheet = _sheet_from_project(nested_project)
@@ -194,7 +194,7 @@ def auto_nest_project(project: dict[str, Any]) -> dict[str, Any]:
     if lead_issues and can_retry_leads and not _common_line_enabled(nested_project) and fallback_spacing > spacing + 1e-6:
         try:
             retry_project, retry_layout = _auto_nest_with_spacing(
-                deepcopy(project) | {"auto_nest": True},
+                deepcopy(_normalize_project(project)) | {"auto_nest": True},
                 sheet,
                 requests,
                 fallback_spacing,
@@ -383,6 +383,7 @@ def _auto_nest_with_spacing(
     nested_project["auto_nest"] = False
     nesting = nested_project.setdefault("nesting", {})
     nesting["last_result"] = _nest_summary_dict(result.summary)
+    nesting["last_result"]["layout_mode"] = options.layout_mode
     auto_lead_deadline = _auto_nest_followup_deadline(deadline)
     auto_lead_skip_reason = _auto_lead_skip_reason(layout, auto_lead_deadline)
     if auto_lead_skip_reason is None:
@@ -741,29 +742,18 @@ def export_project_review_dxf(project: dict[str, Any]) -> str:
         "AC1009",
         "0",
         "ENDSEC",
-        *_dxf_layer_table(("SHEET", "MARGIN", "OUTER", "HOLE", "ZONES", "LEAD", "TABS", "ANNOTATION")),
+        *_dxf_layer_table(("SHEET", "OUTER", "HOLE", "ZONES", "LEAD", "TABS", "ANNOTATION")),
         "0",
         "SECTION",
         "2",
         "ENTITIES",
     ]
     _dxf_rectangle(lines, "SHEET", 0.0, 0.0, layout.sheet.width, layout.sheet.height, precision)
-    margin = layout.sheet.margin
-    if margin > 0 and layout.sheet.width > margin * 2 and layout.sheet.height > margin * 2:
-        _dxf_rectangle(
-            lines,
-            "MARGIN",
-            margin,
-            margin,
-            layout.sheet.width - margin,
-            layout.sheet.height - margin,
-            precision,
-        )
     _dxf_text(
         lines,
         "ANNOTATION",
-        margin,
-        max(margin, layout.sheet.height - margin - 10),
+        0.0,
+        max(0.0, layout.sheet.height - 10),
         f"Review DXF: {layout.name}",
         6.0,
         precision,
@@ -836,7 +826,6 @@ def project_review_report(project: dict[str, Any]) -> dict[str, Any]:
         "sheet": {
             "width_mm": layout.sheet.width,
             "height_mm": layout.sheet.height,
-            "margin_mm": layout.sheet.margin,
             "spacing_mm": layout.spacing,
         },
         "parts": _review_part_counts(project, layout),
@@ -946,7 +935,6 @@ def preview_from_project(project: dict[str, Any]) -> dict[str, Any]:
         "sheet": {
             "width": layout.sheet.width,
             "height": layout.sheet.height,
-            "margin": layout.sheet.margin,
         },
         "spacing_mm": layout.spacing,
         "issues": validate_project(project),
@@ -1100,7 +1088,6 @@ def _gcode_number(value: float, precision: int) -> str:
 def _dxf_layer_table(layers: tuple[str, ...]) -> list[str]:
     color_by_layer = {
         "SHEET": 7,
-        "MARGIN": 1,
         "OUTER": 3,
         "HOLE": 6,
         "ZONES": 5,
@@ -1824,6 +1811,7 @@ def _nest_options_from_project(project: dict[str, Any], *, sheet: Sheet, spacing
         ),
         max_runtime_s=max(1.0, min(120.0, max_runtime)),
         parallel_workers=max(0, min(16, parallel_workers)),
+        layout_mode=str(nesting.get("layout_mode", "strip")),
     )
 
 
@@ -1866,6 +1854,7 @@ def _record_nest_run(project: dict[str, Any], layout: NestedLayout) -> None:
     result = nesting.get("last_result")
     if not isinstance(result, dict):
         return
+    result["layout_mode"] = str(nesting.get("layout_mode", "strip"))
     history = [item for item in nesting.get("run_history", []) if isinstance(item, dict)]
     next_id = max((int(item.get("run_id", 0) or 0) for item in history), default=0) + 1
     history.append(_nest_run_history_entry(project, layout, result, next_id))
@@ -1923,9 +1912,9 @@ def _nest_run_history_entry(
             "part_instance_count": len(layout.placed_parts),
             "sheet_width_mm": float(sheet.get("width_mm", layout.sheet.width)),
             "sheet_height_mm": float(sheet.get("height_mm", layout.sheet.height)),
-            "sheet_margin_mm": float(sheet.get("margin_mm", layout.sheet.margin)),
             "spacing_mm": float(project.get("spacing_mm", layout.spacing)),
             "requested_attempts": int(nesting.get("auto_nest_attempts", nesting.get("attempts", 12))),
+            "layout_mode": str(nesting.get("layout_mode", "strip")),
             "requested_angle_step_deg": float(
                 nesting.get("auto_nest_angle_step_deg", nesting.get("angle_step_deg", 30.0))
             ),
@@ -2120,7 +2109,9 @@ def _apply_auto_lead_overrides(
                 lead_overrides=tuple(_lead_overrides_from_items(active_overrides)),
             )
             if not _contour_has_lead_issues(working_project, layout, part, contour, active_options):
-                continue
+                moves = planned_lead_moves((contour,), active_options)
+                if _lead_extent_score(layout, moves, float(project.get("post", {}).get("pierce_crater_diameter_mm", 4.0)) / 2)[0] <= 1e-6:
+                    continue
             override = _best_auto_lead_override(
                 working_project,
                 layout,
@@ -2146,17 +2137,50 @@ def _best_auto_lead_override(
     *,
     deadline: float | None = None,
 ) -> dict[str, Any] | None:
+    if deadline is not None and time.monotonic() >= deadline:
+        return None
+    context = _lead_safety_context(project, layout)
+    current_options = replace(options, lead_overrides=tuple(_lead_overrides_from_items(active_overrides)))
+    try:
+        current = planned_lead_moves((contour,), current_options)
+    except ValueError:
+        return None
+    best_score = None if any(_lead_move_issue_items(part, move, context) for move in current) else _lead_extent_score(layout, current, context.crater_radius)
+    best = None
     for candidate in _auto_lead_candidates(contour, options):
         if deadline is not None and time.monotonic() >= deadline:
-            return None
+            break
         candidate_items = [*active_overrides, candidate]
         candidate_options = replace(
             options,
             lead_overrides=tuple(_lead_overrides_from_items(candidate_items)),
         )
-        if not _contour_has_lead_issues(project, layout, part, contour, candidate_options):
-            return candidate
-    return None
+        try:
+            moves = planned_lead_moves((contour,), candidate_options)
+        except ValueError:
+            continue
+        if any(_lead_move_issue_items(part, move, context) for move in moves):
+            continue
+        score = _lead_extent_score(layout, moves, context.crater_radius)
+        if best_score is None or score < best_score:
+            best_score, best = score, candidate
+            if score[0] <= 1e-6:
+                break
+    return best
+
+
+def _lead_extent_score(layout: NestedLayout, moves, crater_radius: float) -> tuple[float, float]:
+    boxes = [part.bbox() for part in layout.placed_parts]
+    xmin = min(box[0] for box in boxes)
+    ymin = min(box[1] for box in boxes)
+    xmax = max(box[2] for box in boxes)
+    ymax = max(box[3] for box in boxes)
+    bounds = [bounds for move in moves for _label, _geometry, bounds in _lead_geometries(move, crater_radius)]
+    left = min([xmin, *(box[0] for box in bounds)])
+    bottom = min([ymin, *(box[1] for box in bounds)])
+    right = max([xmax, *(box[2] for box in bounds)])
+    top = max([ymax, *(box[3] for box in bounds)])
+    return ((right - left) * (top - bottom) - (xmax - xmin) * (ymax - ymin), (xmin - left) + (ymin - bottom) + (right - xmax) + (top - ymax))
 
 
 def _contour_has_lead_issues(
@@ -2223,6 +2247,8 @@ def _path_auto_lead_points(contour: PathContour, options: QtPlasmaCOptions) -> l
     points = contour.points(max_chord=max(options.path_tolerance * 20.0, 3.0))
     if not points:
         return []
+    if contour.is_closed():
+        points = [*points, *(Point((a.x + b.x) / 2, (a.y + b.y) / 2) for a, b in zip(points, [*points[1:], points[0]]))]
     scored = sorted(
         points,
         key=lambda point: (
@@ -2747,6 +2773,8 @@ def _lead_safety_context(project: dict[str, Any], layout: NestedLayout) -> _Lead
 
 def _lead_move_issue_items(part, move, context: _LeadSafetyContext) -> list[dict[str, str | None]]:
     issues: list[dict[str, str | None]] = []
+    own_polygon = next((polygon for other, polygon, _bounds in context.part_entries if other.instance_id == part.instance_id), None)
+    own_interior = own_polygon.buffer(-1e-6) if own_polygon is not None else None
     for label, geometry, bounds in _lead_geometries(move, context.crater_radius):
         if _bounds_outside(bounds, context.sheet_bounds):
             issues.append(
@@ -2780,6 +2808,20 @@ def _lead_move_issue_items(part, move, context: _LeadSafetyContext) -> list[dict
                     break
         if label == "pierce point":
             continue
+        if (
+            (move.lead_in_points or move.lead_out_points)
+            and "_common_" not in move.contour_name
+            and geometry is not None
+            and own_interior is not None
+            and geometry.intersects(own_interior)
+        ):
+            issues.append(
+                {
+                    "code": "lead_own_part_collision",
+                    "message": f"{part.instance_id} {move.contour_name} {label} intersects retained material of the same part",
+                    "instance_id": part.instance_id,
+                }
+            )
         for other, other_polygon, other_box in context.part_entries:
             if "_common_" in move.contour_name:
                 break

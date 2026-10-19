@@ -1,11 +1,10 @@
 {
   "format": "kerfgrid-project",
-  "format_version": 1,
+  "format_version": 2,
   "name": "circle_with_center_hole",
   "sheet": {
     "width_mm": 1000,
-    "height_mm": 500,
-    "margin_mm": 10
+    "height_mm": 500
   },
   "spacing_mm": 8,
   "cut": {

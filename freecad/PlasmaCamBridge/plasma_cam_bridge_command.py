@@ -121,9 +121,8 @@ def send_selected_to_plasma_cam(
     output_dir: str | Path | None = None,
 ) -> tuple[core.PlasmaCamImportFiles, dict]:
     paths = export_selected_to_dxf(output_dir=output_dir)
-    imported_project = core.import_dxf_file(paths.dxf_path, server_url=server_url)
+    imported_project = core.upload_dxf_file(paths.dxf_path, server_url=server_url)["project"]
     core.write_json(paths.project_path, imported_project)
-    core.publish_pending_project(imported_project, server_url=server_url)
     return paths, imported_project
 
 
@@ -144,10 +143,9 @@ def run_command() -> None:
     try:
         paths = export_selected_to_dxf()
         try:
-            imported_project = core.import_dxf_file(paths.dxf_path)
+            imported_project = core.upload_dxf_file(paths.dxf_path)["project"]
             core.write_json(paths.project_path, imported_project)
-            core.publish_pending_project(imported_project)
-            core.open_plasma_cam_pending_project()
+            core.open_plasma_cam()
             copied = _copy_to_clipboard(str(paths.project_path))
             clip_text = "Project path copied to clipboard." if copied else "Copy the project path manually."
             _message(

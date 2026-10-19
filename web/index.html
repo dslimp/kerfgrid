@@ -15,6 +15,15 @@
           <span id="status">Ready</span>
         </div>
 
+        <div class="workspace-sync" role="status">
+          <span id="workspaceStatus">Connecting to shared workspace…</span>
+          <div id="workspaceConflict" hidden>
+            <button id="workspaceReloadBtn" type="button">Use server version</button>
+            <button id="workspaceKeepLocalBtn" type="button">Use my version</button>
+          </div>
+          <button id="localProjectBackupBtn" type="button" hidden>Download previous local project</button>
+        </div>
+
         <nav class="tab-strip" aria-label="Sidebar sections">
           <button class="tab-btn active" type="button" data-tab="layout">Layout</button>
           <button class="tab-btn" type="button" data-tab="nest">Nest</button>
@@ -37,7 +46,12 @@
 
         <section class="sidebar-panel" data-tab-panel="nest">
           <h2>Nesting</h2>
-          <label>Margin mm<input id="sheetMargin" type="number" min="0" step="1"></label>
+          <label class="stack-label">Размещение
+            <select id="nestLayoutMode">
+              <option value="compact">Компактно от нуля</option>
+              <option value="strip">В линию вдоль X</option>
+            </select>
+          </label>
           <label>Spacing mm<input id="spacing" type="number" min="0" step="1"></label>
           <label>Nest runs<input id="nestAttempts" type="number" min="1" max="240" step="1"></label>
           <label>Angle step deg<input id="nestAngleStep" type="number" min="1" max="90" step="1"></label>
@@ -55,9 +69,10 @@
         </section>
 
         <section class="sidebar-panel" data-tab-panel="nest">
-          <h2>Travel</h2>
-          <label>Safe travel<input id="safeTravel" type="checkbox"></label>
-          <label>Clearance mm<input id="travelClearance" type="number" min="0" step="0.5"></label>
+          <h2>Холостые переходы</h2>
+          <label class="check-row"><input id="safeTravel" type="checkbox"> Обходить вырезанные детали</label>
+          <label>Запас обхода, мм<input id="travelClearance" type="number" min="0" step="0.5"></label>
+          <div id="travelModeInfo" class="readout compact"></div>
         </section>
 
         <section class="sidebar-panel active" data-tab-panel="layout">
@@ -89,6 +104,11 @@
               <tbody></tbody>
             </table>
           </div>
+        </section>
+
+        <section class="sidebar-panel active" data-tab-panel="layout">
+          <h2>Uploaded files</h2>
+          <div id="workspaceFiles" class="workspace-files">No uploaded files</div>
         </section>
 
         <section class="sidebar-panel active" data-tab-panel="layout">
@@ -145,7 +165,6 @@
           </label>
           <label class="check-row"><input id="optimizeCutOrder" type="checkbox"> Optimize order</label>
           <label class="check-row"><input id="keepPartContoursTogether" type="checkbox"> Keep part contours</label>
-          <label class="check-row"><input id="avoidCompletedContours" type="checkbox"> Avoid completed cuts</label>
           <label>Heat weight<input id="heatSpreadWeight" type="number" min="0" step="0.05"></label>
           <label>Heat lookback<input id="heatLookback" type="number" min="1" max="20" step="1"></label>
           <label class="stack-label">Manual groups

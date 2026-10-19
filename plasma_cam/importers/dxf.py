@@ -323,7 +323,8 @@ def import_dxf_circles(
             ),
         )
 
-    sheet_data = sheet or {"width_mm": 1000, "height_mm": 500, "margin_mm": 10}
+    sheet_data = dict(sheet or {"width_mm": 1000, "height_mm": 500})
+    sheet_data.pop("margin_mm", None)
     cut_data = cut or {
         "material": "mild_steel",
         "thickness_mm": 3,
@@ -353,6 +354,8 @@ def import_dxf_circles(
     issue_items = _issues_to_json(issues, groups, placements, include_sheet_points=include_issue_sheet_points)
 
     return {
+        "format": "kerfgrid-project",
+        "format_version": 2,
         "name": part_name,
         "sheet": sheet_data,
         "spacing_mm": spacing_mm,
@@ -2779,19 +2782,18 @@ def _initial_placements_for_groups(
     sheet_data: dict[str, Any],
     spacing_mm: float,
 ) -> list[dict[str, Any]]:
-    margin = float(sheet_data.get("margin_mm", 10))
     sheet_width = float(sheet_data.get("width_mm", 1000))
     spacing = max(float(spacing_mm), 0.0)
     placement_spacing = spacing + INITIAL_PLACEMENT_EXTRA_CLEARANCE_MM
-    cursor_x = margin
-    cursor_y = margin
+    cursor_x = 0.0
+    cursor_y = 0.0
     row_height = 0.0
     placements: list[dict[str, Any]] = []
     for group in groups:
         width = group.bbox[2] - group.bbox[0]
         height = group.bbox[3] - group.bbox[1]
-        if cursor_x > margin and cursor_x + width > sheet_width - margin:
-            cursor_x = margin
+        if cursor_x > 0 and cursor_x + width > sheet_width:
+            cursor_x = 0.0
             cursor_y += row_height + placement_spacing
             row_height = 0.0
         placements.append(

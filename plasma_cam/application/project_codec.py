@@ -14,7 +14,6 @@ def sheet_from_project(project: dict[str, Any]) -> Sheet:
     return Sheet(
         width=float(sheet.get("width_mm", 1000.0)),
         height=float(sheet.get("height_mm", 500.0)),
-        margin=float(sheet.get("margin_mm", 10.0)),
     )
 
 

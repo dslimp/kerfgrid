@@ -228,6 +228,22 @@ def publish_pending_project(
     post_json(pending_project_endpoint(server_url), {"project": project}, timeout_s=timeout_s, opener=opener)
 
 
+def upload_dxf_file(
+    dxf_path: str | os.PathLike[str],
+    *,
+    server_url: str | None = None,
+    timeout_s: float = DEFAULT_TIMEOUT_S,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    import uuid
+
+    path = Path(dxf_path)
+    payload = make_import_payload(path.read_text(encoding="utf-8", errors="ignore"), path.name)
+    payload.update(quantity=1, request_id=request_id or str(uuid.uuid4()))
+    return post_json(f"{normalize_server_url(server_url)}/api/workspace/import-dxf",
+                     payload, timeout_s=timeout_s)
+
+
 def write_json(path: str | os.PathLike[str], payload: dict[str, Any]) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)

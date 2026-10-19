@@ -12,7 +12,9 @@ These rules apply to this repository.
 - Validation findings are warnings. They must be visible in review, simulation, and G-code comments, but must not block export.
 - Simulation is generated from the exact G-code that will be exported.
 - Auto nest must return the best valid layout found before its optimization deadline. The deadline is not a minimum runtime and expiry must not discard a valid seed.
-- Prefer lower-left, compact layouts and leave unused stock above the packed region.
+- Anchor auto nest at the lower left and respect the selected packing mode:
+  compact balances both extents into a block; strip minimizes occupied height
+  and leaves stock above the packed region.
 - KerfGrid-to-LinuxCNC send means the exported NGC is accepted by the local G-code validator and opened in the running LinuxCNC UI, not only copied into `nc_files`. Treat the transfer as successful only after the remote controller reports the loaded file path back through `linuxcnc.stat().file`.
 - QtPlasmaC magic comments must stay short enough for the LinuxCNC G-code filter; prefer compact temporary material comments over descriptive names in `(o=...)`.
 - Keep LinuxCNC transfers to one SSH stdin stream with OpenSSH connection reuse. Avoid splitting upload, ownership, and UI load into separate SSH/SCP operations unless debugging that path explicitly.

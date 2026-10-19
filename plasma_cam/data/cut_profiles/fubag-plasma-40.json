@@ -1,10 +1,10 @@
 {
   "profile_id": "fubag-plasma-40-starter",
-  "version": "2026-08-23-starter",
-  "revision": "starter-r1",
-  "updated_at": "2026-08-23",
+  "version": "2026-10-15-air5",
+  "revision": "starter-r3-air5",
+  "updated_at": "2026-10-15",
   "machine": "Fubag Plasma 40",
-  "source": "Starter estimate for Fubag Plasma 40 / FB P40 on mild steel. Fubag data confirms 20-40 A machine range, 0.8 mm nozzles for 20-30 A, 0.9 mm nozzles for 30-40 A, and about 6 mm optimal / 10-12 mm severance steel capacity. Feed, kerf, and pierce delay require local coupon calibration.",
+  "source": "Starter estimate for Fubag Plasma 40 / FB P40 on mild steel. Fubag data confirms 20-40 A machine range, 0.8 mm nozzles for 20-30 A, 0.9 mm nozzles for 30-40 A, and about 6 mm optimal / 10-12 mm severance steel capacity. Initial pierce and cut height 8 mm reproduce the working Mach3 M3 macro; external THC controls height during cutting. FB P40 operating air pressure 4.5-5.0 bar per Fubag catalogue; set 5 bar with air flowing. Actual height, feed, kerf, and pierce delay require local coupon calibration.",
   "rows": [
     {
       "material": "mild_steel",
@@ -14,11 +14,11 @@
       "feed_rate_mm_min": 3200,
       "kerf_width_mm": 0.9,
       "pierce_delay_s": 0.1,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 94.5,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -29,11 +29,11 @@
       "feed_rate_mm_min": 2800,
       "kerf_width_mm": 0.9,
       "pierce_delay_s": 0.1,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 95.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -44,11 +44,11 @@
       "feed_rate_mm_min": 2200,
       "kerf_width_mm": 1.0,
       "pierce_delay_s": 0.2,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 96.5,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -59,11 +59,11 @@
       "feed_rate_mm_min": 1800,
       "kerf_width_mm": 1.0,
       "pierce_delay_s": 0.25,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 98.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -74,11 +74,11 @@
       "feed_rate_mm_min": 1100,
       "kerf_width_mm": 1.1,
       "pierce_delay_s": 0.35,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 101.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -89,11 +89,11 @@
       "feed_rate_mm_min": 1900,
       "kerf_width_mm": 1.1,
       "pierce_delay_s": 0.25,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 100.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -104,11 +104,11 @@
       "feed_rate_mm_min": 1300,
       "kerf_width_mm": 1.2,
       "pierce_delay_s": 0.35,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 103.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -119,11 +119,11 @@
       "feed_rate_mm_min": 900,
       "kerf_width_mm": 1.3,
       "pierce_delay_s": 0.5,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 106.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -134,11 +134,11 @@
       "feed_rate_mm_min": 650,
       "kerf_width_mm": 1.4,
       "pierce_delay_s": 0.7,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 109.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -149,11 +149,11 @@
       "feed_rate_mm_min": 500,
       "kerf_width_mm": 1.5,
       "pierce_delay_s": 0.9,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 112.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -164,11 +164,11 @@
       "feed_rate_mm_min": 300,
       "kerf_width_mm": 1.7,
       "pierce_delay_s": 1.2,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 118.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": []
     },
     {
@@ -179,11 +179,11 @@
       "feed_rate_mm_min": 220,
       "kerf_width_mm": 1.9,
       "pierce_delay_s": 1.5,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 124.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": [
         "severance range"
       ]
@@ -196,11 +196,11 @@
       "feed_rate_mm_min": 150,
       "kerf_width_mm": 2.1,
       "pierce_delay_s": 1.8,
-      "pierce_height_mm": 3.0,
-      "cut_height_mm": 1.5,
+      "pierce_height_mm": 8.0,
+      "cut_height_mm": 8.0,
       "cut_volts": 130.0,
       "thc_enabled": true,
-      "air_pressure_bar": 5.5,
+      "air_pressure_bar": 5.0,
       "notes": [
         "severance range"
       ]

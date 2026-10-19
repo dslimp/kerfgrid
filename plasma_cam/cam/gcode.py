@@ -6,7 +6,9 @@ from .options import QtPlasmaCOptions
 
 
 def format_number(value: float, precision: int) -> str:
-    text = f"{value:.{precision}f}".rstrip("0").rstrip(".")
+    text = f"{value:.{precision}f}"
+    if precision > 0:
+        text = text.rstrip("0").rstrip(".")
     if text == "-0":
         return "0"
     return text or "0"
@@ -14,7 +16,7 @@ def format_number(value: float, precision: int) -> str:
 
 def gcode_line(code: str, comment: str | None, options: QtPlasmaCOptions) -> str:
     if comment and options.include_comments:
-        return f"{code} ({comment})"
+        return f"{code} ({comment_text(comment)})"
     return code
 
 

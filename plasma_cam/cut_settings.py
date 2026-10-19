@@ -22,7 +22,7 @@ class CutChartRow:
     cut_height_mm: float = 1.5
     cut_volts: float | None = None
     thc_enabled: bool = True
-    air_pressure_bar: float = 5.5
+    air_pressure_bar: float = 5.0
     small_hole_threshold_mm: float | None = None
     small_shape_threshold_mm: float | None = None
     small_hole_speed_percent: float | None = None
@@ -238,7 +238,7 @@ def _row_from_dict(data: dict[str, object]) -> CutChartRow:
         cut_height_mm=float(data.get("cut_height_mm", 1.5)),
         cut_volts=float(cut_volts) if cut_volts is not None else None,
         thc_enabled=bool(data.get("thc_enabled", True)),
-        air_pressure_bar=float(data.get("air_pressure_bar", 5.5)),
+        air_pressure_bar=float(data.get("air_pressure_bar", 5.0)),
         small_hole_threshold_mm=_optional_nonnegative_float(data.get("small_hole_threshold_mm")),
         small_shape_threshold_mm=_optional_nonnegative_float(data.get("small_shape_threshold_mm")),
         small_hole_speed_percent=_optional_percent(data.get("small_hole_speed_percent")),
@@ -364,7 +364,7 @@ def _coupon_result_measured_row(
         cut_height_mm=round(cut_height_mm, 3),
         cut_volts=round(cut_volts, 3),
         thc_enabled=thc_enabled,
-        air_pressure_bar=base.air_pressure_bar if base else 5.5,
+        air_pressure_bar=base.air_pressure_bar if base else 5.0,
         small_hole_threshold_mm=_optional_nonnegative_float(result.get("small_hole_threshold_mm"))
         if result.get("small_hole_threshold_mm") is not None
         else (base.small_hole_threshold_mm if base else None),

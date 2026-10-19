@@ -1,0 +1,225 @@
+{
+  "name": "eave_plate_tab10_1pc",
+  "sheet": {
+    "width_mm": 1000,
+    "height_mm": 500
+  },
+  "spacing_mm": 6,
+  "placements": [
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 1,
+      "dx": 60,
+      "dy": 29.900154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 2,
+      "dx": 60.061,
+      "dy": 85.700154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 3,
+      "dx": 60.122,
+      "dy": 141.500154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 4,
+      "dx": 60.183,
+      "dy": 197.300154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 5,
+      "dx": 60.244,
+      "dy": 253.10015399999997,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 6,
+      "dx": 60.305,
+      "dy": 308.900154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 7,
+      "dx": 60.366,
+      "dy": 364.700154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    },
+    {
+      "part_name": "eave_plate_tab10_1pc",
+      "instance": 8,
+      "dx": 60.427,
+      "dy": 420.500154,
+      "rotation_deg": 0,
+      "locked": false,
+      "manual": false
+    }
+  ],
+  "cut": {
+    "material": "mild_steel",
+    "thickness_mm": 4,
+    "nozzle_mm": 0.9,
+    "feed_rate_mode": "auto",
+    "manual_feed_rate_mm_min": 900
+  },
+  "post": {
+    "lead_in_mode": "auto",
+    "lead_in_mm": 5,
+    "lead_out_mm": 0,
+    "lead_in_min_hole_diameter_mm": 20,
+    "pierce_crater_diameter_mm": 4,
+    "lead_clearance_mm": 1,
+    "qtplasmac_material_mode": "temporary",
+    "qtplasmac_material_number": 0,
+    "qtplasmac_material_wait_s": 1,
+    "safe_travel": true,
+    "travel_clearance_mm": 8,
+    "avoid_completed_contours": true,
+    "optimize_cut_order": true,
+    "keep_part_contours_together": true,
+    "cut_order_strategy": "nearest",
+    "cut_order_groups": [],
+    "heat_spread_weight": 0.35,
+    "heat_lookback": 3,
+    "small_feature_source": "manual",
+    "small_hole_threshold_mm": 37,
+    "small_shape_threshold_mm": 37,
+    "small_hole_speed_percent": 65,
+    "small_hole_overburn_mm": 0,
+    "small_hole_torch_off_before_end_mm": 0,
+    "auto_tabs": false,
+    "auto_tab_count": 2,
+    "auto_tab_length_mm": 8,
+    "auto_tab_min_outer_diameter_mm": 60,
+    "kerf_offset_fallback": "centerline",
+    "open_path_mode": "centerline",
+    "path_tolerance_mm": 0.1,
+    "precision": 3
+  },
+  "format": "kerfgrid-project",
+  "format_version": 2,
+  "parts": [
+    {
+      "name": "eave_plate_tab10_1pc",
+      "quantity": 8,
+      "allowed_rotations": [
+        0,
+        45,
+        90,
+        135,
+        180,
+        225,
+        270,
+        315
+      ],
+      "contours": [
+        {
+          "type": "path",
+          "name": "eave_plate_tab10_1pc_outer_1",
+          "kind": "outer",
+          "source": "eave_plate_tab10_1pc",
+          "open": false,
+          "segments": [
+            {
+              "type": "line",
+              "start": {
+                "x": -60,
+                "y": -19.900154
+              },
+              "end": {
+                "x": 30.5,
+                "y": -19.900154
+              }
+            },
+            {
+              "type": "line",
+              "start": {
+                "x": 30.5,
+                "y": -19.900154
+              },
+              "end": {
+                "x": 30.5,
+                "y": -29.900154
+              }
+            },
+            {
+              "type": "line",
+              "start": {
+                "x": 30.5,
+                "y": -29.900154
+              },
+              "end": {
+                "x": 60,
+                "y": -29.900154
+              }
+            },
+            {
+              "type": "line",
+              "start": {
+                "x": 60,
+                "y": -29.900154
+              },
+              "end": {
+                "x": 60,
+                "y": 4.393367
+              }
+            },
+            {
+              "type": "line",
+              "start": {
+                "x": 60,
+                "y": 4.393367
+              },
+              "end": {
+                "x": -60,
+                "y": 29.900154
+              }
+            },
+            {
+              "type": "line",
+              "start": {
+                "x": -60,
+                "y": 29.900154
+              },
+              "end": {
+                "x": -60,
+                "y": -19.900154
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "nesting": {
+    "layout_mode": "compact",
+    "auto_nest_parallel_workers": 1,
+    "auto_nest_max_runtime_s": 2,
+    "auto_nest_attempts": 12,
+    "allow_arbitrary_rotation": false
+  }
+}

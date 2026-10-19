@@ -78,7 +78,12 @@ seed_closed_path='async () => {
     tabs: [],
     lead_overrides: []
   };
-  localStorage.setItem(storageKey, JSON.stringify(project));
+  const snapshot = await (await fetch("/api/workspace")).json();
+  const saved = await fetch("/api/workspace", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: snapshot.revision, project })
+  });
+  if (!saved.ok) throw new Error(await saved.text());
   window.location.reload();
   return true;
 }'
@@ -128,7 +133,13 @@ check_closed_path_fill='async () => {
 }'
 
 reset_after_closed_path='async () => {
-  localStorage.removeItem("kerfgrid.project.v1");
+  const snapshot = await (await fetch("/api/workspace")).json();
+  const project = await (await fetch("/api/example")).json();
+  const saved = await fetch("/api/workspace", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: snapshot.revision, project })
+  });
+  if (!saved.ok) throw new Error(await saved.text());
   window.location.reload();
   return true;
 }'
@@ -189,7 +200,12 @@ seed_review_only_project='async () => {
     tabs: [],
     lead_overrides: []
   };
-  localStorage.setItem(storageKey, JSON.stringify(project));
+  const snapshot = await (await fetch("/api/workspace")).json();
+  const saved = await fetch("/api/workspace", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_revision: snapshot.revision, project })
+  });
+  if (!saved.ok) throw new Error(await saved.text());
   window.location.reload();
   return true;
 }'
@@ -226,8 +242,10 @@ check_review_only_visible_nonproduction='async () => {
   const scale = Math.max(0.01, Math.min((rect.width - pad * 2) / 200, (rect.height - pad * 2) / 120));
   const originX = (rect.width - 200 * scale) / 2;
   const originY = (rect.height - 120 * scale) / 2 + 120 * scale;
-  const sampleX = Math.round((originX + 55 * scale) * ratio);
-  const sampleY = Math.round((originY - 10 * scale) * ratio);
+  const current = JSON.parse(localStorage.getItem("kerfgrid.project.v1"));
+  const placement = current.placements.find(item => item.part_name === "review_open");
+  const sampleX = Math.round((originX + (placement.dx - 20) * scale) * ratio);
+  const sampleY = Math.round((originY - placement.dy * scale) * ratio);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   const image = context.getImageData(sampleX - 60, sampleY - 4, 121, 9).data;
   let contourPixels = 0;
@@ -237,7 +255,7 @@ check_review_only_visible_nonproduction='async () => {
     const g = image[index + 1];
     const b = image[index + 2];
     const a = image[index + 3];
-    if (a > 0 && g > 90 && r < 130 && b < 150) contourPixels += 1;
+    if (a > 0 && g > 90 && r < 130 && b < 210) contourPixels += 1;
     if (a > 0 && r > 170 && g < 130 && b < 130) redDiagnosticPixels += 1;
   }
   if (contourPixels < 20) {

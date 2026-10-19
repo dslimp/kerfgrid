@@ -22,6 +22,7 @@ from .cam.travel import (
     line_comment as _line_comment,
     motion_target_from_line as _motion_target_from_line,
     safe_rapid_lines as _safe_rapid_lines,
+    rapid_distance as _rapid_distance,
 )
 from .model import (
     ArcSegment,
@@ -33,6 +34,7 @@ from .model import (
     bbox_for_contours,
     contour_diameter,
     order_contours,
+    signed_area,
 )
 from .validation import assert_valid_gcode
 
@@ -299,18 +301,15 @@ def _path_lead_move(contour: PathContour, options: QtPlasmaCOptions) -> LeadMove
         points = _rotate_points_to_nearest(points, Point(override.start_x, override.start_y))
     lead_mode, lead = _lead_in_for_contour(contour, diameter, options)
     start = points[0]
-    next_point = points[1]
-    tangent = _unit_vector(start, next_point)
-    pierce = start if lead_mode == "none" else Point(start.x - tangent.x * lead, start.y - tangent.y * lead)
+    direction = _path_waste_direction(points, contour.kind)
+    pierce = start if lead_mode == "none" else Point(start.x + direction.x * lead, start.y + direction.y * lead)
     if override and override.pierce_x is not None and override.pierce_y is not None:
         pierce = Point(override.pierce_x, override.pierce_y)
     lead_in_points = (pierce, start) if lead_mode != "none" and not pierce.almost_equals(start) else ()
     lead_out = _lead_out_for_contour(contour, diameter, options)
     lead_out_points: tuple[Point, ...] = ()
     if lead_out > 0 and not small_feature:
-        previous = points[-1]
-        out_tangent = _unit_vector(previous, start)
-        lead_out_points = (start, Point(start.x + out_tangent.x * lead_out, start.y + out_tangent.y * lead_out))
+        lead_out_points = (start, Point(start.x + direction.x * lead_out, start.y + direction.y * lead_out))
     return LeadMove(
         contour_name=contour.name,
         contour_kind=contour.kind,
@@ -322,6 +321,19 @@ def _path_lead_move(contour: PathContour, options: QtPlasmaCOptions) -> LeadMove
         lead_out_points=lead_out_points,
         small_feature=small_feature,
     )
+
+
+def _path_waste_direction(points: list[Point], kind: str) -> Point:
+    incoming = _unit_vector(points[-1], points[0])
+    outgoing = _unit_vector(points[0], points[1])
+    side = 1.0 if signed_area(points) > 0 else -1.0
+    if kind == "outer":
+        side = -side
+    normal = Point(-(incoming.y + outgoing.y) * side, (incoming.x + outgoing.x) * side)
+    length = math.hypot(normal.x, normal.y)
+    if length <= 1e-9:
+        return Point(-outgoing.y * side, outgoing.x * side)
+    return Point(normal.x / length, normal.y / length)
 
 
 def _open_path_lead_move(contour: PathContour, options: QtPlasmaCOptions) -> LeadMove:
@@ -456,7 +468,8 @@ def _path_gcode(contour: PathContour, options: QtPlasmaCOptions, skip_segments: 
     if lead_mode == "none":
         pierce = start
     else:
-        pierce = Point(start.x - tangent.x * lead, start.y - tangent.y * lead)
+        direction = _path_waste_direction(points, contour.kind)
+        pierce = Point(start.x + direction.x * lead, start.y + direction.y * lead)
     if override and override.pierce_x is not None and override.pierce_y is not None:
         pierce = Point(override.pierce_x, override.pierce_y)
 
@@ -516,9 +529,8 @@ def _path_gcode(contour: PathContour, options: QtPlasmaCOptions, skip_segments: 
             )
     lead_out = _lead_out_for_contour(contour, diameter, options)
     if lead_out > 0 and not small_feature:
-        previous = points[-1]
-        out_tangent = _unit_vector(previous, start)
-        out_point = Point(start.x + out_tangent.x * lead_out, start.y + out_tangent.y * lead_out)
+        direction = _path_waste_direction(points, contour.kind)
+        out_point = Point(start.x + direction.x * lead_out, start.y + direction.y * lead_out)
         lines.append(_line(f"G1 X{_fmt(out_point.x, precision)} Y{_fmt(out_point.y, precision)}", "lead out", options))
     lines.append("M5 $0")
     lines.extend(_torch_restore_lines(small_feature, options))
@@ -648,8 +660,23 @@ def _torch_restore_lines(small_feature: bool, options: QtPlasmaCOptions) -> list
 def _rotate_points_to_nearest(points: list[Point], target: Point) -> list[Point]:
     if not points:
         return points
-    index = min(range(len(points)), key=lambda item: points[item].distance_to(target))
-    return [*points[index:], *points[:index]]
+    best = None
+    for index, start in enumerate(points):
+        end = points[(index + 1) % len(points)]
+        dx, dy = end.x - start.x, end.y - start.y
+        squared = dx * dx + dy * dy
+        fraction = max(0.0, min(1.0, ((target.x - start.x) * dx + (target.y - start.y) * dy) / squared)) if squared > 1e-12 else 0.0
+        point = Point(start.x + fraction * dx, start.y + fraction * dy)
+        candidate = (point.distance_to(target), index, point)
+        if best is None or candidate[0] < best[0]:
+            best = candidate
+    _distance, index, point = best
+    if point.almost_equals(points[index]):
+        return [*points[index:], *points[:index]]
+    following = (index + 1) % len(points)
+    if point.almost_equals(points[following]):
+        return [*points[following:], *points[:following]]
+    return [point, *points[following:], *points[:following]]
 
 
 def _append_path_segment(
@@ -797,34 +824,65 @@ def _optimized_cut_order(contours: Iterable[Contour], options: QtPlasmaCOptions)
     exit_cache: dict[int, Point] = {}
     if not options.optimize_cut_order or len(raw) > CUT_ORDER_OPTIMIZE_MAX_CONTOURS:
         return order_contours(raw)
-    if not options.keep_part_contours_together:
-        return _nearest_order(order_contours(raw), Point(0.0, 0.0), options, entry_cache, exit_cache)
-    groups = _contour_groups(raw)
+    groups = (_contour_groups(raw) if options.keep_part_contours_together else
+              {f"{index}:{contour.name}": [contour] for index, contour in enumerate(raw)})
     prerequisites = _group_cut_prerequisites(groups)
+    if not options.keep_part_contours_together:
+        for key, sequence in groups.items():
+            contour = sequence[0]
+            if contour.kind != "outer":
+                continue
+            prerequisites[key].update(
+                other for other, items in groups.items()
+                if items[0].kind != "outer" and _contour_group_key(items[0]) == _contour_group_key(contour)
+            )
     remaining = set(groups)
     current = Point(0.0, 0.0)
     ordered: list[Contour] = []
     recent_centers: list[Point] = []
+    completed = list(options.travel_obstacles)
     while remaining:
-        best_key = None
-        best_sequence: list[Contour] | None = None
-        best_score: tuple[float, ...] | None = None
+        candidates = []
         eligible = [key for key in remaining if not (prerequisites.get(key, set()) & remaining)]
-        for key in eligible or list(remaining):
+        for key in sorted(eligible or remaining):
             sequence = _order_group(groups[key], current, options, entry_cache, exit_cache)
             if not sequence:
                 continue
-            score = _group_order_score(key, sequence, current, recent_centers, options, entry_cache)
-            if best_score is None or score < best_score:
-                best_key = key
-                best_sequence = sequence
-                best_score = score
-        if best_key is None or best_sequence is None:
+            entry = _contour_entry_point_cached(sequence[0], options, entry_cache)
+            distance = current.distance_to(entry)
+            if options.safe_travel and options.avoid_completed_contours:
+                distance = _rapid_distance(current, entry, completed, options)
+            score = _group_order_score(key, sequence, recent_centers, options, distance)
+            candidates.append((score, key, sequence))
+        if not candidates:
             break
+        candidates.sort(key=lambda item: item[0])
+        selected = candidates[0]
+        if options.safe_travel and options.avoid_completed_contours and len(remaining) > 1:
+            for candidate in candidates:
+                score, key, sequence = candidate
+                if score[0] != candidates[0][0][0] or score[1]:
+                    break
+                after = completed + [obstacle for item in sequence if (obstacle := _contour_obstacle(item)) is not None]
+                exit_point = _contour_exit_point_cached(sequence[-1], options, exit_cache)
+                following = [other for other in remaining if other != key
+                             and not (prerequisites.get(other, set()) & (remaining - {key}))]
+                can_leave = not following
+                for other in sorted(following):
+                    next_sequence = _order_group(groups[other], exit_point, options, entry_cache, exit_cache)
+                    if next_sequence and math.isfinite(_rapid_distance(exit_point, _contour_entry_point_cached(next_sequence[0], options, entry_cache), after, options)):
+                        can_leave = True
+                        break
+                if can_leave:
+                    selected = candidate
+                    break
+        _, best_key, best_sequence = selected
         ordered.extend(best_sequence)
+        if options.avoid_completed_contours:
+            completed.extend(obstacle for contour in best_sequence if (obstacle := _contour_obstacle(contour)) is not None)
         current = _contour_exit_point_cached(best_sequence[-1], options, exit_cache)
         recent_centers.append(_sequence_center(best_sequence))
-        recent_centers = recent_centers[-options.heat_lookback :]
+        recent_centers = recent_centers[-options.heat_lookback:]
         remaining.remove(best_key)
     return ordered
 
@@ -832,23 +890,22 @@ def _optimized_cut_order(contours: Iterable[Contour], options: QtPlasmaCOptions)
 def _group_order_score(
     key: str,
     sequence: list[Contour],
-    current: Point,
     recent_centers: list[Point],
     options: QtPlasmaCOptions,
-    entry_cache: dict[int, Point],
+    travel_distance: float,
 ) -> tuple[float, ...]:
-    entry = _contour_entry_point_cached(sequence[0], options, entry_cache)
     xmin, ymin, xmax, ymax = bbox_for_contours(sequence)
     area = (xmax - xmin) * (ymax - ymin)
     key_score = _stable_key_score(key)
+    reachable = 0 if math.isfinite(travel_distance) else 1
     if options.cut_order_strategy == "lower_left":
-        return (_manual_group_rank(key, sequence, options), ymin, xmin, current.distance_to(entry), area, key_score)
+        return (_manual_group_rank(key, sequence, options), reachable, ymin, xmin, travel_distance, area, key_score)
     if options.cut_order_strategy == "heat_spread" and recent_centers:
         center = Point((xmin + xmax) / 2.0, (ymin + ymax) / 2.0)
         nearest_recent = min(center.distance_to(item) for item in recent_centers)
-        heat_score = current.distance_to(entry) - options.heat_spread_weight * nearest_recent
-        return (_manual_group_rank(key, sequence, options), heat_score, current.distance_to(entry), area, key_score)
-    return (_manual_group_rank(key, sequence, options), current.distance_to(entry), area, key_score)
+        heat_score = travel_distance - options.heat_spread_weight * nearest_recent
+        return (_manual_group_rank(key, sequence, options), reachable, heat_score, travel_distance, area, key_score)
+    return (_manual_group_rank(key, sequence, options), reachable, travel_distance, area, key_score)
 
 
 def _manual_group_rank(key: str, sequence: list[Contour], options: QtPlasmaCOptions) -> float:
@@ -857,6 +914,7 @@ def _manual_group_rank(key: str, sequence: list[Contour], options: QtPlasmaCOpti
     tokens = {key}
     for contour in sequence:
         tokens.add(contour.name)
+        tokens.add(_contour_group_key(contour))
         if contour.source:
             tokens.add(contour.source)
     for index, requested in enumerate(options.cut_order_groups):
@@ -999,20 +1057,8 @@ def _cut_priority(contour: Contour) -> int:
 
 
 def _contour_entry_point(contour: Contour, options: QtPlasmaCOptions) -> Point:
-    override = _lead_override_for(contour, options)
-    if override and override.start_x is not None and override.start_y is not None:
-        return Point(override.start_x, override.start_y)
-    if isinstance(contour, CircleContour):
-        try:
-            radius = _path_radius(contour, options)
-        except ValueError:
-            radius = contour.radius
-        return Point(contour.center.x + radius, contour.center.y)
-    points = contour.points(max_chord=max(options.path_tolerance * 8.0, 0.5))
-    if not points:
-        xmin, ymin, xmax, ymax = contour.bbox()
-        return Point((xmin + xmax) / 2.0, (ymin + ymax) / 2.0)
-    return points[0]
+    lines = _contour_lines(contour, options)
+    return _motion_target_from_line(lines[0], Point(0.0, 0.0)) if lines else Point(0.0, 0.0)
 
 
 def _contour_entry_point_cached(contour: Contour, options: QtPlasmaCOptions, cache: dict[int, Point]) -> Point:
@@ -1025,11 +1071,7 @@ def _contour_entry_point_cached(contour: Contour, options: QtPlasmaCOptions, cac
 
 
 def _contour_exit_point(contour: Contour, options: QtPlasmaCOptions) -> Point:
-    if isinstance(contour, PathContour) and not contour.is_closed():
-        points = contour.points(max_chord=max(options.path_tolerance * 8.0, 0.5))
-        if points:
-            return points[-1]
-    return _contour_entry_point(contour, options)
+    return _last_motion_point(_contour_lines(contour, options), _contour_entry_point(contour, options))
 
 
 def _contour_exit_point_cached(contour: Contour, options: QtPlasmaCOptions, cache: dict[int, Point]) -> Point:
@@ -1139,8 +1181,8 @@ def generate_gcode(contours: Iterable[Contour], options: QtPlasmaCOptions) -> st
             options,
             common_line_skips.get(contour.name, frozenset()),
         )
-        if options.avoid_completed_contours:
-            obstacles.append(_contour_obstacle(contour))
+        if options.avoid_completed_contours and (obstacle := _contour_obstacle(contour)) is not None:
+            obstacles.append(obstacle)
 
     lines.extend(["M68 E3 Q0", "M5 $-1", "M2"])
     gcode = "\n".join(lines) + "\n"

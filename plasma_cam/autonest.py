@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import math
 import os
 import time
 from dataclasses import dataclass, replace
@@ -55,8 +56,11 @@ class ShelfNestOptions:
     hole_parent_part_names: tuple[str, ...] | None = None
     max_runtime_s: float = 12.0
     parallel_workers: int = 1
+    layout_mode: str = "strip"
 
     def __post_init__(self) -> None:
+        if self.layout_mode not in {"compact", "strip"}:
+            raise ValueError("Auto nest layout mode must be compact or strip")
         if self.attempt_limit < 1:
             raise ValueError("Auto nest attempt limit must be positive")
         if self.angle_step_deg is not None and self.angle_step_deg <= 0:
@@ -269,9 +273,37 @@ def shelf_nest_result(
         pass
     else:
         seed_best = (seed_score, seed_layout, "shelf-seed")
+    paired_seeds = _pack_paired_seeds(
+        name,
+        instances,
+        options,
+        deadline=min(packing_deadline, time.monotonic() + min(1.0, options.max_runtime_s * 0.15)),
+        stats=stats,
+        cache=cache,
+    )
+    for layout, score, label in paired_seeds:
+        if seed_best is None or score < seed_best[0]:
+            seed_best = (score, layout, label)
+    if options.layout_mode == "compact" and instances:
+        side = math.sqrt(sum(
+            (_profile_width(profile) + options.spacing) * (_profile_height(profile) + options.spacing)
+            for profile, _instance, _rotations in instances
+        ))
+        for scale in (1.0, 1.25, 1.5):
+            if _deadline_reached(packing_deadline):
+                break
+            bounded_sheet = replace(options.sheet, width=min(options.sheet.width, side * scale + options.sheet.margin * 2), height=min(options.sheet.height, side * scale + options.sheet.margin * 2))
+            try:
+                bounded, _score = _pack_shelf_seed(name, instances, replace(options, sheet=bounded_sheet), deadline=packing_deadline, cache=cache)
+            except (TimeoutError, ValueError):
+                continue
+            candidate = replace(bounded, sheet=options.sheet)
+            score = _layout_score(candidate, options, cache)
+            if seed_best is None or score < seed_best[0]:
+                seed_best = (score, candidate, f"block-seed/{scale:g}")
     attempts, build_time_limited = _build_attempts(instances, options, cache, deadline=packing_deadline)
     best: tuple[tuple[float, ...], NestedLayout, str] | None = None
-    successful = 0
+    successful = len(paired_seeds)
     time_limited = build_time_limited
     lattice_attempt_count = 0
     parallel_fallback_reason: str | None = None
@@ -328,7 +360,7 @@ def shelf_nest_result(
     time_limited = time_limited or attempt_time_limited
     if attempt_best is not None and (best is None or attempt_best[0] < best[0]):
         best = attempt_best
-    if best is None and seed_best is not None:
+    if seed_best is not None and (best is None or seed_best[0] < best[0]):
         best = seed_best
     if best is None and time_limited:
         raise ValueError("Auto nest could not fit parts on the current sheet within the optimization budget")
@@ -351,7 +383,7 @@ def shelf_nest_result(
     summary = _nest_summary(
         compacted,
         options.sheet,
-        attempt_count=max(1, len(attempts) + lattice_attempt_count),
+        attempt_count=max(1, len(attempts) + lattice_attempt_count + len(paired_seeds)),
         successful_attempt_count=successful or 1,
         best_attempt=best[2],
         time_limited=time_limited,
@@ -422,7 +454,7 @@ def _pack_shelf_seed(
                         dy=y - ymin,
                         rotation_deg=rotation,
                     )
-                    score = (y, x, box[3], box[2], abs(rotation) % 360.0)
+                    score = (*_candidate_score(box, [*score_boxes, box], margin_x, margin_y, "compact", options.layout_mode), abs(rotation) % 360.0)
                     if best is None or score < best[0]:
                         best = (score, placement, box)
         if best is None:
@@ -432,7 +464,7 @@ def _pack_shelf_seed(
         occupied.append(box)
         score_boxes.append(box)
     layout = NestedLayout(name=name, sheet=options.sheet, placed_parts=tuple(placed), spacing=options.spacing)
-    return layout, _nest_score(score_boxes, margin_x, margin_y)
+    return layout, _nest_score(score_boxes, margin_x, margin_y, options.layout_mode)
 
 
 def _build_attempts(
@@ -466,36 +498,35 @@ def _build_attempts(
     attempts = []
     seen_attempts = set()
     time_limited = False
-    for order_label, ordered in ordered_specs:
+    combinations = sorted(
+        ((i, j, k) for i in range(len(ordered_specs)) for j in range(len(candidate_policies)) for k in range(len(rotation_sets))),
+        key=lambda item: (sum(item), item[2], item[0], item[1]),
+    )
+    for order_index, policy_index, rotation_index in combinations:
         if _deadline_reached(deadline):
             time_limited = True
             break
-        for policy in candidate_policies:
-            if _deadline_reached(deadline):
-                time_limited = True
-                break
-            for rotation_label, rotation_pool in rotation_sets:
-                if _deadline_reached(deadline):
-                    time_limited = True
-                    break
-                attempt_key = (
-                    tuple((profile.name, instance) for profile, instance, _rotations in ordered),
-                    policy,
-                    _attempt_rotation_pool_key(ordered, rotation_pool, options),
-                )
-                if attempt_key in seen_attempts:
-                    continue
-                seen_attempts.add(attempt_key)
-                attempts.append(
-                    _AttemptSpec(
-                        label=f"{order_label}/{rotation_label}/{policy}",
-                        instances=ordered,
-                        rotation_pool=rotation_pool,
-                        candidate_policy=policy,
-                    )
-                )
-                if len(attempts) >= options.attempt_limit:
-                    return attempts, time_limited
+        order_label, ordered = ordered_specs[order_index]
+        policy = candidate_policies[policy_index]
+        rotation_label, rotation_pool = rotation_sets[rotation_index]
+        attempt_key = (
+            tuple((profile.name, instance) for profile, instance, _rotations in ordered),
+            policy,
+            _attempt_rotation_pool_key(ordered, rotation_pool, options),
+        )
+        if attempt_key in seen_attempts:
+            continue
+        seen_attempts.add(attempt_key)
+        attempts.append(
+            _AttemptSpec(
+                label=f"{order_label}/{rotation_label}/{policy}",
+                instances=ordered,
+                rotation_pool=rotation_pool,
+                candidate_policy=policy,
+            )
+        )
+        if len(attempts) >= options.attempt_limit:
+            return attempts, time_limited
     return attempts, time_limited
 
 
@@ -617,6 +648,7 @@ def _pack_attempt(
             deadline,
             stats,
             cache,
+            layout_mode=options.layout_mode,
         )
         if candidate is None:
             raise ValueError(f"Could not fit {profile.name}_{instance} on sheet")
@@ -625,7 +657,7 @@ def _pack_attempt(
         occupied.append((box, polygon))
         score_boxes.append(box)
     layout = NestedLayout(name=name, sheet=options.sheet, placed_parts=tuple(placed), spacing=options.spacing)
-    return layout, _nest_score(score_boxes, margin_x, margin_y)
+    return layout, _nest_score(score_boxes, margin_x, margin_y, options.layout_mode)
 
 
 def _pack_attempts_parallel(
@@ -767,6 +799,126 @@ def _expand_instances(requests: tuple[PartRequest, ...]) -> list[tuple[PartProfi
     return instances
 
 
+def _pack_paired_seeds(
+    name: str,
+    instances: list[NestItem],
+    options: ShelfNestOptions,
+    *,
+    deadline: float | None,
+    stats: _NestStats | None,
+    cache: _GeometryCache,
+) -> list[tuple[NestedLayout, tuple[float, ...], str]]:
+    if len(instances) < 2 or shapely_translate is None:
+        return []
+    profile = instances[0][0]
+    if any(item[0] is not profile for item in instances) or _profile_segment_count(profile) > MAX_NFP_GEOMETRY_POINTS:
+        return []
+    best: tuple[NestedLayout, tuple[float, ...], str] | None = None
+    try:
+        _raise_if_deadline_reached(deadline)
+        common = set(_unique_angles(instances[0][2]))
+        for _profile, _instance, allowed in instances[1:]:
+            _raise_if_deadline_reached(deadline)
+            common.intersection_update(_unique_angles(allowed))
+        if not common:
+            return []
+        rotations = _unique_profile_rotations(profile, tuple(sorted(common)), cache, deadline=deadline)
+        rotations = tuple(sorted(rotations, key=lambda angle: (round(angle % 90.0, 3), angle)))
+        pair_count = (len(instances) + 1) // 2
+        for angle in rotations:
+            opposite = next((value for value in rotations if abs((value - angle) % 360.0 - 180.0) < 0.001), None)
+            if opposite is None:
+                continue
+            first = cache.footprint(profile, angle)
+            second = cache.footprint(profile, opposite)
+            if first.polygon is None or second.polygon is None or first.polygon.is_empty or second.polygon.is_empty:
+                continue
+            if _geometry_point_count(first.polygon) + _geometry_point_count(second.polygon) > MAX_NFP_GEOMETRY_POINTS:
+                continue
+            first_polygon = _translate_polygon(first.polygon, -first.bbox[0], -first.bbox[1])
+            second_polygon = _translate_polygon(second.polygon, -second.bbox[0], -second.bbox[1])
+            for axis in (1, 0):
+                cross = 1 - axis
+                cross_size = first.bbox[cross + 2] - first.bbox[cross]
+                for fraction in (0.0, -0.25, 0.25, -0.5, 0.5):
+                    offset = fraction * cross_size
+                    moving = _translate_polygon(second_polygon, offset if cross == 0 else 0.0, offset if cross == 1 else 0.0)
+                    shift = _pair_clearance_shift(first_polygon, moving, axis, options.spacing, deadline=deadline, stats=stats)
+                    moving = _translate_polygon(moving, shift if axis == 0 else 0.0, shift if axis == 1 else 0.0)
+                    polygon = first_polygon.union(moving)
+                    bounds = polygon.bounds
+                    width, height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+                    pitch = _pair_clearance_shift(polygon, polygon, axis, options.spacing, deadline=deadline, stats=stats)
+                    pitch_x = pitch if axis == 0 else width + options.spacing + 0.0001
+                    pitch_y = pitch if axis == 1 else height + options.spacing + 0.0001
+                    templates = (
+                        Placement(profile.name, 1, -first.bbox[0] - bounds[0], -first.bbox[1] - bounds[1], angle),
+                        Placement(profile.name, 2, -second.bbox[0] - bounds[0] + (shift if axis == 0 else offset), -second.bbox[1] - bounds[1] + (shift if axis == 1 else offset), opposite),
+                    )
+                    columns = sorted(
+                        range(1, pair_count + 1),
+                        key=lambda count: _nest_score([(0.0, 0.0, width + (count - 1) * pitch_x, height + ((pair_count - 1) // count) * pitch_y)], 0.0, 0.0, options.layout_mode),
+                    )
+                    for count in columns:
+                        _raise_if_deadline_reached(deadline)
+                        layout = _paired_grid_layout(name, instances, templates, count, pitch_x, pitch_y, options, deadline=deadline, stats=stats, cache=cache)
+                        if layout is None:
+                            continue
+                        score = _layout_score(layout, options, cache)
+                        if best is None or score < best[1]:
+                            best = (layout, score, f"paired/{angle:g}deg/{'xy'[axis]}/{count}cols")
+    except TimeoutError:
+        pass
+    return [best] if best is not None else []
+
+
+def _pair_clearance_shift(fixed, moving, axis: int, spacing: float, *, deadline: float | None, stats: _NestStats | None) -> float:
+    lower = 0.0
+    upper = max(0.0, fixed.bounds[axis + 2] - moving.bounds[axis]) + spacing + 0.0001
+    for _iteration in range(28):
+        _raise_if_deadline_reached(deadline)
+        middle = (lower + upper) / 2.0
+        candidate = _translate_polygon(moving, middle if axis == 0 else 0.0, middle if axis == 1 else 0.0)
+        if stats is not None:
+            stats.exact_clearance_check_count += 1
+        separated = fixed.distance(candidate) >= spacing + 0.00001
+        if separated:
+            upper = middle
+        else:
+            lower = middle
+    return upper + 0.00001
+
+
+def _paired_grid_layout(
+    name: str,
+    instances: list[NestItem],
+    templates: tuple[Placement, Placement],
+    columns: int,
+    pitch_x: float,
+    pitch_y: float,
+    options: ShelfNestOptions,
+    *,
+    deadline: float | None,
+    stats: _NestStats | None,
+    cache: _GeometryCache,
+) -> NestedLayout | None:
+    start_x = options.start_x if options.start_x is not None else options.sheet.margin
+    start_y = options.start_y if options.start_y is not None else options.sheet.margin
+    occupied: list[tuple[Box, object | None]] = [(box, None) for box in options.blocked_boxes]
+    placed: list[PlacedPart] = []
+    for index, (profile, instance, _rotations) in enumerate(instances):
+        _raise_if_deadline_reached(deadline)
+        row, column = divmod(index // 2, columns)
+        template = templates[index % 2]
+        placement = replace(template, part_name=profile.name, instance=instance, dx=start_x + column * pitch_x + template.dx, dy=start_y + row * pitch_y + template.dy)
+        part = PlacedPart(profile, placement)
+        if not _part_fits(part, options.sheet, occupied, options.spacing, deadline=deadline, stats=stats, cache=cache):
+            return None
+        placed.append(part)
+        occupied.append((_part_bbox(part, cache), _part_polygon(part, cache)))
+    return NestedLayout(name, options.sheet, tuple(placed), options.spacing)
+
+
 def _pack_lattice_attempts(
     name: str,
     instances: list[NestItem],
@@ -788,7 +940,7 @@ def _pack_lattice_attempts(
             break
         if layout is None:
             continue
-        score = _nest_score([_part_bbox(part, cache) for part in layout.placed_parts], options.sheet.margin, options.sheet.margin)
+        score = _nest_score([_part_bbox(part, cache) for part in layout.placed_parts], options.sheet.margin, options.sheet.margin, options.layout_mode)
         layouts.append((layout, score, f"lattice/{rotation:g}deg"))
     return layouts
 
@@ -879,6 +1031,8 @@ def _best_candidate(
     deadline: float | None,
     stats: _NestStats | None = None,
     cache: _GeometryCache | None = None,
+    *,
+    layout_mode: str = "strip",
 ) -> tuple[Placement, Box, object | None] | None:
     cache = cache or _GeometryCache(stats)
     best: tuple[tuple[float, ...], Placement, Box, object | None] | None = None
@@ -935,7 +1089,7 @@ def _best_candidate(
                 for occupied_box, occupied_polygon in overlapping
             ):
                 continue
-            score = _candidate_score(box, [*score_boxes, box], margin_x, margin_y, candidate_policy)
+            score = _candidate_score(box, [*score_boxes, box], margin_x, margin_y, candidate_policy, layout_mode)
             if best is None or score < best[0]:
                 if polygon is None:
                     polygon = _translate_polygon(footprint.polygon, placement.dx, placement.dy)
@@ -1001,8 +1155,8 @@ def _profile_rotation_signature(profile: PartProfile, rotation: float, cache: _G
     return cache.footprint(profile, rotation).signature
 
 
-def _candidate_score(box: Box, boxes: list[Box], margin_x: float, margin_y: float, policy: str) -> tuple[float, ...]:
-    compact = _nest_score(boxes, margin_x, margin_y)
+def _candidate_score(box: Box, boxes: list[Box], margin_x: float, margin_y: float, policy: str, layout_mode: str = "strip") -> tuple[float, ...]:
+    compact = _nest_score(boxes, margin_x, margin_y, layout_mode)
     if policy == "bottom":
         return (box[3], box[1], *compact, box[0])
     if policy == "left":
@@ -1345,7 +1499,7 @@ def _relocate_parts_into_internal_holes(
     while True:
         if deadline is not None and time.monotonic() >= deadline:
             break
-        current_score = _nest_score([_part_bbox(part, cache) for part in placed], options.sheet.margin, options.sheet.margin)
+        current_score = _nest_score([_part_bbox(part, cache) for part in placed], options.sheet.margin, options.sheet.margin, options.layout_mode)
         best_move: tuple[tuple[float, ...], int, PlacedPart] | None = None
         holes = _internal_hole_containers(placed, options)
         if not holes:
@@ -1364,6 +1518,7 @@ def _relocate_parts_into_internal_holes(
                 [_part_bbox(item, cache) for item in candidate_placed],
                 options.sheet.margin,
                 options.sheet.margin,
+                options.layout_mode,
             )
             if candidate_score >= current_score:
                 continue
@@ -1542,7 +1697,7 @@ def _hole_candidate_offsets(hole: _HoleContainer, footprint: _Footprint) -> list
     return sorted(output, key=lambda item: (item[1], item[0]))
 
 
-def _nest_score(boxes: list[Box], margin_x: float, margin_y: float) -> tuple[float, ...]:
+def _nest_score(boxes: list[Box], margin_x: float, margin_y: float, layout_mode: str = "strip") -> tuple[float, ...]:
     if not boxes:
         return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
     max_x = max(box[2] for box in boxes)
@@ -1552,6 +1707,17 @@ def _nest_score(boxes: list[Box], margin_x: float, margin_y: float) -> tuple[flo
     skyline_waste_area = _skyline_waste_area(boxes, margin_x, margin_y)
     lower_left_y_mass = sum(max(0.0, box[1] - margin_y) for box in boxes)
     lower_left_x_mass = sum(max(0.0, box[0] - margin_x) for box in boxes)
+    if layout_mode == "compact":
+        return (
+            used_width * used_width + used_height * used_height,
+            used_width * used_height,
+            used_height,
+            used_width,
+            skyline_waste_area,
+            lower_left_y_mass,
+            lower_left_x_mass,
+            max_y,
+        )
     return (
         used_height,
         used_width * used_height,
@@ -1697,6 +1863,11 @@ def _compact_layout(
         if deadline is not None and time.monotonic() >= deadline:
             break
         pass_best: tuple[tuple[float, ...], NestedLayout] | None = None
+        for axis in ("x", "y"):
+            candidate = _aligned_layout_candidate(best_valid, options, axis, deadline=deadline, stats=stats, cache=cache)
+            score = _layout_score(candidate, options, cache)
+            if score < best_score and (pass_best is None or score < pass_best[0]):
+                pass_best = (score, candidate)
         for order_policy, axis_order in strategies:
             if deadline is not None and time.monotonic() >= deadline:
                 break
@@ -1721,12 +1892,79 @@ def _compact_layout(
     return best_valid
 
 
+def _aligned_layout_candidate(
+    layout: NestedLayout,
+    options: ShelfNestOptions,
+    axis: str,
+    *,
+    deadline: float | None,
+    stats: _NestStats | None,
+    cache: _GeometryCache,
+) -> NestedLayout:
+    if _deadline_reached(deadline):
+        return layout
+    coordinate = 0 if axis == "x" else 1
+    cross = 1 - coordinate
+    cross_axis = "y" if axis == "x" else "x"
+    boxes = [_part_bbox(part, cache) for part in layout.placed_parts]
+    targets: dict[int, float] = {}
+    previous = anchor = None
+    for index in sorted(range(len(boxes)), key=lambda i: boxes[i][coordinate]):
+        box = boxes[index]
+        value = box[coordinate]
+        tolerance = max(options.spacing, min(box[2] - box[0], box[3] - box[1]) * 0.1)
+        if previous is None or value - previous > tolerance:
+            anchor = value
+        targets[index] = anchor
+        previous = value
+    if not any(boxes[i][coordinate] - target > 0.001 for i, target in targets.items()):
+        return layout
+    output = list(layout.placed_parts)
+    obstacles = [(box, None) for box in options.blocked_boxes]
+    for part in output:
+        if part.placement.locked:
+            obstacles.append((_part_bbox(part, cache), _part_polygon(part, cache)))
+    for index in sorted(range(len(output)), key=lambda i: (boxes[i][cross], boxes[i][coordinate])):
+        if _deadline_reached(deadline):
+            return layout
+        part = output[index]
+        if part.placement.locked:
+            continue
+        aligned = _part_with_axis_min(part, axis, targets[index], cache)
+        bbox = _part_bbox(aligned, cache)
+        lower = bbox[cross]
+        limit = (options.sheet.height if cross else options.sheet.width) - options.sheet.margin - (bbox[cross + 2] - lower)
+        upper = min(limit, max([lower, *(box[cross + 2] + options.spacing for box, _polygon in obstacles)]))
+        placed = None
+        previous = lower
+        for value in _slide_positions(lower, upper, obstacles, cross_axis, bbox, options.spacing):
+            if _deadline_reached(deadline):
+                return layout
+            candidate = _part_with_axis_min(aligned, cross_axis, value, cache)
+            try:
+                if not _part_fits(candidate, options.sheet, obstacles, options.spacing, stats=stats, cache=cache, deadline=deadline):
+                    previous = value
+                    continue
+                refined = _refine_slide_position(aligned, cross_axis, previous, value, options.sheet, obstacles, options.spacing, deadline=deadline, stats=stats, cache=cache)
+                refined_candidate = _part_with_axis_min(aligned, cross_axis, min(value, refined + 0.001), cache)
+                placed = refined_candidate if _part_fits(refined_candidate, options.sheet, obstacles, options.spacing, stats=stats, cache=cache, deadline=deadline) else candidate
+            except TimeoutError:
+                return layout
+            break
+        if placed is None:
+            return layout
+        output[index] = placed
+        obstacles.append((_part_bbox(placed, cache), _part_polygon(placed, cache)))
+    candidate_layout = NestedLayout(layout.name, layout.sheet, tuple(output), layout.spacing)
+    return layout if _deadline_reached(deadline) or validate_layout(candidate_layout) else candidate_layout
+
+
 def _box_sort_key(box: Box) -> tuple[float, float]:
     return (box[1], box[0])
 
 
 def _layout_score(layout: NestedLayout, options: ShelfNestOptions, cache: _GeometryCache) -> tuple[float, ...]:
-    return _nest_score([_part_bbox(part, cache) for part in layout.placed_parts], options.sheet.margin, options.sheet.margin)
+    return _nest_score([_part_bbox(part, cache) for part in layout.placed_parts], options.sheet.margin, options.sheet.margin, options.layout_mode)
 
 
 def _compact_layout_sweep(
@@ -1764,7 +2002,7 @@ def _compaction_order(placed: list[PlacedPart], cache: _GeometryCache, policy: s
             return (box[0], -box[3], placed[index].instance_id)
         return (box[1], box[0], placed[index].instance_id)
 
-    return sorted(range(len(placed)), key=key)
+    return sorted((index for index, part in enumerate(placed) if not part.placement.locked), key=key)
 
 
 def _compaction_obstacles(

@@ -591,7 +591,7 @@ EOF
     assert entry["import_warning_issues"][0]["target_x"] == pytest.approx(80)
     assert "Collinear overlapping DXF line edges" in entry["import_warning_issues"][0]["message"]
     validation_overlap = next(issue for issue in entry["validation_warning_issues"] if issue["code"] == "import_collinear_overlap")
-    assert validation_overlap["sheet_x"] == pytest.approx(50)
+    assert validation_overlap["sheet_x"] == pytest.approx(40)
     assert report["diagnostics"]["blocking_file_count"] == 0
 
     monkeypatch.setattr(dxf_corpus_check, "ISSUE_SHEET_POINTS_MAX_BYTES", 0)

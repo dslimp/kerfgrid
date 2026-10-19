@@ -24,7 +24,10 @@ from plasma_cam.application.linuxcnc_transfer import (
 
 
 def _ok(_command, **_kwargs):
-    return subprocess.CompletedProcess(_command, 0, "__KERFGRID_UPLOAD_OK__\n", "")
+    source = json.loads(_kwargs["input"])["files"][0]["remote_path"]
+    receipt = {"source": source, "loaded": True, "native_gui_load": True,
+               "loaded_file": "/tmp/emcflt-test/" + Path(source).name}
+    return subprocess.CompletedProcess(_command, 0, "__KERFGRID_UPLOAD_OK__\n" + json.dumps(receipt) + "\n", "")
 
 
 def test_linuxcnc_transfer_config_reads_env() -> None:
@@ -71,7 +74,7 @@ def test_send_gcode_builds_single_ssh_upload_and_load_command() -> None:
                 "byte_count": len("G21\nM2\n".encode("utf-8")),
             }
         ]
-        return subprocess.CompletedProcess(command, 0, "__KERFGRID_UPLOAD_OK__\n", "")
+        return _ok(command, **_kwargs)
 
     result = send_gcode_to_linuxcnc(
         filename="../bad name.ngc",
@@ -114,7 +117,7 @@ def test_send_gcode_bundle_uploads_outline_and_loads_job_in_one_ssh_command() ->
             "kerfgrid_job_live.ngc",
             "kerfgrid_outline_live.ngc",
         ]
-        return subprocess.CompletedProcess(command, 0, "__KERFGRID_UPLOAD_OK__\n", "")
+        return _ok(command, **_kwargs)
 
     result = send_gcode_bundle_to_linuxcnc(
         files=(
@@ -254,3 +257,30 @@ def test_server_send_linuxcnc_endpoint_returns_transfer_payload(monkeypatch) -> 
         "uploaded": True,
         "loaded": True,
     }
+
+
+def test_upload_exit_zero_without_native_receipt_is_not_loaded():
+    result = send_gcode_to_linuxcnc(filename='job.ngc', gcode='G21\nM2\n',
+                                  run=lambda command, **kwargs: subprocess.CompletedProcess(command, 0, '__KERFGRID_UPLOAD_OK__\n', ''),
+                                  which=lambda name: '/usr/bin/ssh')
+    assert result['uploaded'] is True
+    assert result['loaded'] is False
+    assert result['loaded_file'] is None
+    assert 'receipt' in result['load_error']
+
+
+def test_native_receipt_must_match_upload_and_filtered_gui_file():
+    from plasma_cam.application.linuxcnc_transfer import _native_load_receipt
+
+    good = {'loaded': True, 'native_gui_load': True, 'source': '/jobs/job.ngc', 'loaded_file': '/tmp/emcflt/job.ngc'}
+    assert _native_load_receipt(json.dumps(good), '/jobs/job.ngc') == good
+    for change in [{'source': '/other.ngc'}, {'native_gui_load': False}, {'loaded_file': '/jobs/job.ngc'}, {'loaded_file': ''}, {'loaded': False}]:
+        assert _native_load_receipt(json.dumps({**good, **change}), '/jobs/job.ngc') is None
+
+
+def test_default_loader_uses_native_gui_helper_and_never_direct_program_open():
+    from plasma_cam.application.linuxcnc_transfer import _REMOTE_NATIVE_LOAD_SCRIPT
+
+    assert 'program_open' not in _REMOTE_NATIVE_LOAD_SCRIPT
+    assert 'status.queue' in _REMOTE_NATIVE_LOAD_SCRIPT and 'not status.inpos' in _REMOTE_NATIVE_LOAD_SCRIPT
+    assert '/usr/local/bin/linuxcnc-load' in _REMOTE_NATIVE_LOAD_SCRIPT
