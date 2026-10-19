@@ -34,7 +34,9 @@ import {
   const cutChartTableEl = document.getElementById("cutChartTable");
   const cutChartInfoEl = document.getElementById("cutChartInfo");
   const partsTableEl = document.getElementById("partsTable");
-  const zoomLabelEl = document.getElementById("zoomLabel");
+  const zoomPercentEl = document.getElementById("zoomPercent");
+  const panViewBtn = document.getElementById("panViewBtn");
+  const viewToolbar = document.querySelector(".view-toolbar");
   const zonesListEl = document.getElementById("zonesList");
   const leadEditInfoEl = document.getElementById("leadEditInfo");
   const nestingInfoEl = document.getElementById("nestingInfo");
@@ -53,6 +55,7 @@ import {
   const redoBtn = document.getElementById("redoBtn");
   const clearSheetBtn = document.getElementById("clearSheetBtn");
   const storageKey = "kerfgrid.project.v1";
+  const viewStorageKey = "kerfgrid.view.v1";
   const migrationBackupKey = "kerfgrid.project.before-shared.v1";
   const projectFormat = "kerfgrid-project";
   const projectFormatVersion = 2;
@@ -160,7 +163,10 @@ import {
   let pendingExportApprovalSignature = null;
   let statusVersion = 0;
   let view = { scale: 1, pad: 40, originX: 40, originY: 40 };
-  let viewState = { mode: "sheet", zoom: 1, bounds: null };
+  let viewState = loadViewState();
+  let panning = null;
+  let panMode = false;
+  let spacePan = false;
   let viewRedrawFrame = null;
   let undoStack = [];
   let redoStack = [];
@@ -193,7 +199,7 @@ import {
       }
       if (!files.length) list.textContent = "No uploaded files";
     },
-    isBusy: () => Boolean(dragging || autoNesting || importing || couponImporting || pendingControlHistory),
+    isBusy: () => Boolean(dragging || panning || autoNesting || importing || couponImporting || pendingControlHistory),
   });
 
   function keyForPlacement(placement) {
@@ -1426,25 +1432,55 @@ import {
       view = { ...dragging.view };
       return;
     }
-    const rect = canvas.getBoundingClientRect();
+    const area = viewArea();
     const bounds = viewBounds();
     const pad = 42;
     const width = Math.max(1, bounds.maxX - bounds.minX);
     const height = Math.max(1, bounds.maxY - bounds.minY);
-    const scaleX = (rect.width - pad * 2) / width;
-    const scaleY = (rect.height - pad * 2) / height;
-    const fitScale = Math.max(0.01, Math.min(scaleX, scaleY));
+    const fitScale = Math.max(1e-9, Math.min(area.width / width, area.height / height));
     const scale = fitScale * viewState.zoom;
     const targetWidth = width * scale;
     const targetHeight = height * scale;
-    const left = (rect.width - targetWidth) / 2;
-    const top = (rect.height - targetHeight) / 2;
+    const left = area.left + (area.width - targetWidth) / 2 + viewState.panX;
+    const top = area.top + (area.height - targetHeight) / 2 + viewState.panY;
     view = {
       scale,
       pad,
       originX: left - bounds.minX * scale,
       originY: top + bounds.maxY * scale,
     };
+  }
+
+  function viewArea() {
+    const rect = canvas.getBoundingClientRect();
+    const top = Math.max(42, viewToolbar.getBoundingClientRect().bottom - rect.top + 12);
+    return { left: 42, top, width: Math.max(1, rect.width - 84), height: Math.max(1, rect.height - top - 42) };
+  }
+
+  function loadViewState() {
+    const defaults = { mode: "sheet", zoom: 1, bounds: null, panX: 0, panY: 0 };
+    try {
+      const stored = JSON.parse(localStorage.getItem(viewStorageKey));
+      if (!stored || typeof stored !== "object") return defaults;
+      const bounds = stored.bounds;
+      const validBounds = bounds && [bounds.minX, bounds.minY, bounds.maxX, bounds.maxY].every(Number.isFinite)
+        && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY;
+      return { mode: stored.mode === "parts" && validBounds ? "parts" : "sheet",
+        zoom: Number.isFinite(stored.zoom) ? clamp(stored.zoom, 0.05, 50) : 1,
+        bounds: validBounds ? bounds : null,
+        panX: Number.isFinite(stored.panX) ? stored.panX : 0,
+        panY: Number.isFinite(stored.panY) ? stored.panY : 0 };
+    } catch (error) {
+      return defaults;
+    }
+  }
+
+  function saveViewState() {
+    try {
+      localStorage.setItem(viewStorageKey, JSON.stringify(viewState));
+    } catch (error) {
+      return;
+    }
   }
 
   function viewBounds() {
@@ -1491,18 +1527,34 @@ import {
     };
   }
 
-  function zoomView(factor) {
-    viewState.zoom = clamp(viewState.zoom * factor, 0.2, 12);
+  function setViewZoom(zoom, anchor = null) {
+    if (!project || dragging || panning || !Number.isFinite(zoom)) return;
+    configureView();
+    const area = viewArea();
+    const point = anchor || { x: area.left + area.width / 2, y: area.top + area.height / 2 };
+    const world = screenToWorld(point);
+    viewState.zoom = clamp(zoom, 0.05, 50);
+    configureView();
+    const moved = worldToScreen(world);
+    viewState.panX += point.x - moved.x;
+    viewState.panY += point.y - moved.y;
+    saveViewState();
     drawViewChange();
   }
 
+  function zoomView(factor, anchor = null) {
+    setViewZoom(viewState.zoom * factor, anchor);
+  }
+
   function fitSheetView() {
-    viewState = { mode: "sheet", zoom: 1, bounds: null };
+    viewState = { mode: "sheet", zoom: 1, bounds: null, panX: 0, panY: 0 };
+    saveViewState();
     drawViewChange();
   }
 
   function fitPartsView() {
-    viewState = { mode: "parts", zoom: 1, bounds: partsViewBounds() || sheetViewBounds() };
+    viewState = { mode: "parts", zoom: 1, bounds: partsViewBounds() || sheetViewBounds(), panX: 0, panY: 0 };
+    saveViewState();
     drawViewChange();
   }
 
@@ -1519,8 +1571,26 @@ import {
   }
 
   function updateZoomLabel() {
-    if (!zoomLabelEl) return;
-    zoomLabelEl.textContent = `${Math.round(viewState.zoom * 100)}%`;
+    if (document.activeElement !== zoomPercentEl) zoomPercentEl.value = String(Math.round(viewState.zoom * 1000) / 10);
+  }
+
+  function updatePanCursor() {
+    canvas.classList.toggle("pan-ready", panMode || spacePan);
+    canvas.classList.toggle("pan-active", Boolean(panning));
+    panViewBtn.setAttribute("aria-pressed", String(panMode));
+  }
+
+  function finishPanning() {
+    if (panning) saveViewState();
+    panning = null;
+    updatePanCursor();
+  }
+
+  function togglePanMode() {
+    if (dragging) return;
+    finishPanning();
+    panMode = !panMode;
+    updatePanCursor();
   }
 
   function clamp(value, min, max) {
@@ -2592,6 +2662,10 @@ import {
   }
 
   function setEditorMode(mode) {
+    finishPanning();
+    panMode = false;
+    spacePan = false;
+    updatePanCursor();
     editorMode = mode;
     draw();
   }
@@ -3163,6 +3237,28 @@ import {
     if (isEditableTarget(event.target)) return;
     const key = event.key.toLowerCase();
     const command = event.metaKey || event.ctrlKey;
+    if (!command && !event.altKey && event.code === "Space" && !dragging
+        && (event.target === document.body || event.target === canvas || canvas.matches(":hover"))) {
+      event.preventDefault();
+      spacePan = true;
+      updatePanCursor();
+      return;
+    }
+    if (!command && !event.altKey && key === "h" && !event.repeat) {
+      event.preventDefault();
+      togglePanMode();
+      return;
+    }
+    if ((panMode || spacePan) && ["arrowleft", "arrowright", "arrowup", "arrowdown"].includes(key)) {
+      event.preventDefault();
+      if (panning) return;
+      const step = event.shiftKey ? 100 : 25;
+      viewState.panX += key === "arrowleft" ? step : key === "arrowright" ? -step : 0;
+      viewState.panY += key === "arrowup" ? step : key === "arrowdown" ? -step : 0;
+      saveViewState();
+      drawViewChange();
+      return;
+    }
     if (command && !event.altKey && key === "z") {
       event.preventDefault();
       if (event.shiftKey) {
@@ -4394,6 +4490,17 @@ import {
   }
 
   canvas.addEventListener("mousedown", (event) => {
+    if (!project || dragging) return;
+    if (event.button === 1 || (event.button === 0 && (panMode || spacePan))) {
+      event.preventDefault();
+      canvas.focus({ preventScroll: true });
+      panning = { x: event.clientX, y: event.clientY, panX: viewState.panX, panY: viewState.panY,
+        kind: event.button === 1 ? "middle" : spacePan ? "space" : "hand" };
+      updatePanCursor();
+      return;
+    }
+    if (event.button !== 0) return;
+    canvas.focus({ preventScroll: true });
     const screen = canvasPoint(event);
     const rotateKey = hitTestRotateHandle(screen);
     const world = screenToWorld(screen);
@@ -4481,7 +4588,31 @@ import {
     draw();
   });
 
+  window.addEventListener("mousemove", (event) => {
+    if (!panning) return;
+    if (!(event.buttons & (panning.kind === "middle" ? 4 : 1))) {
+      finishPanning();
+      return;
+    }
+    viewState.panX = panning.panX + event.clientX - panning.x;
+    viewState.panY = panning.panY + event.clientY - panning.y;
+    drawViewChange();
+  });
+
+  canvas.addEventListener("wheel", (event) => {
+    if (!project) return;
+    event.preventDefault();
+    if (dragging || panning) return;
+    canvas.focus({ preventScroll: true });
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1;
+    zoomView(Math.exp(-clamp(event.deltaY * unit, -600, 600) * 0.0015), canvasPoint(event));
+  }, { passive: false });
+
   window.addEventListener("mouseup", () => {
+    if (panning) {
+      finishPanning();
+      return;
+    }
     if (dragging) {
       const history = dragging.history;
       const label = dragging.mode === "rotate" ? "Rotate" : dragging.mode === "zone" ? "Move zone" : "Move";
@@ -4569,6 +4700,20 @@ import {
   document.getElementById("importCouponResultsBtn").addEventListener("click", importCouponResults);
   document.getElementById("zoomOutBtn").addEventListener("click", () => zoomView(1 / 1.25));
   document.getElementById("zoomInBtn").addEventListener("click", () => zoomView(1.25));
+  const applyZoomInput = () => {
+    const percent = zoomPercentEl.valueAsNumber;
+    if (Number.isFinite(percent)) setViewZoom(percent / 100);
+    zoomPercentEl.value = String(Math.round(viewState.zoom * 1000) / 10);
+  };
+  zoomPercentEl.addEventListener("change", applyZoomInput);
+  zoomPercentEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      applyZoomInput();
+      zoomPercentEl.blur();
+    }
+  });
+  panViewBtn.addEventListener("click", togglePanMode);
   document.getElementById("fitSheetBtn").addEventListener("click", fitSheetView);
   document.getElementById("fitPartsBtn").addEventListener("click", fitPartsView);
   if (undoBtn) undoBtn.addEventListener("click", undoHistory);
@@ -4577,6 +4722,16 @@ import {
   if (cutChartProfileFileEl) cutChartProfileFileEl.addEventListener("change", importCutChartProfileFile);
   if (couponResultsFileEl) couponResultsFileEl.addEventListener("change", loadCouponResultsFile);
   window.addEventListener("keydown", handleKeyboard);
+  window.addEventListener("keyup", (event) => {
+    if (event.code !== "Space") return;
+    spacePan = false;
+    if (panning?.kind === "space") finishPanning();
+    updatePanCursor();
+  });
+  window.addEventListener("blur", () => {
+    spacePan = false;
+    finishPanning();
+  });
   window.addEventListener("resize", draw);
   document.getElementById("workspaceReloadBtn").addEventListener("click", () => sharedWorkspace.resolve(false));
   document.getElementById("workspaceKeepLocalBtn").addEventListener("click", () => sharedWorkspace.resolve(true));

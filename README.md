@@ -65,6 +65,14 @@ When backend code changes, restart the existing `127.0.0.1:8765` server before
 browser acceptance. Do not switch to an alternate port unless the operator asks
 for it.
 
+Enter the desired zoom in the toolbar's percentage field and press Enter.
+The supported range is 5–5000%; 100% means the current Sheet or Parts view fits
+the available canvas. The mouse wheel zooms around the cursor. Drag with the
+middle button or hold Space and drag with the left button to pan. The hand
+button (H) also enables left-button dragging and arrow-key panning. Sheet and
+Parts reset the view. Camera preferences persist in each browser independently
+of the shared job and never move parts or add Undo entries.
+
 Run the browser smoke acceptance after the server is up:
 
 ```sh

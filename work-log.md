@@ -1,5 +1,29 @@
 # KerfGrid Work Log
 
+## 2026-10-19 Viewport Zoom And Pan
+
+User requests explicit scale entry and navigation around the drawing. Added
+5–5000% input (Enter/blur), cursor-anchored wheel zoom, hand tool/H,
+middle-button and Space+left panning. Arrows pan in hand mode. Numeric zoom and
+pan are local browser preferences, separate from shared projects and Undo;
+Sheet/Parts reset both. Fit uses the area below the toolbar, including wrapped
+controls. Pan ends on release, lost button state or window blur; right drag
+cannot select/move a part. Existing select-mode geometry drag remains available.
+
+Verification: pytest 295 passed / 3 optional external-corpus skips. Required
+Playwright smoke and visual smoke passed. New `tests/viewport_acceptance.js`
+checks rendered contour size/position for exact 200% and arbitrary 137.5%,
+all pan gestures, arrows/H, wheel anchoring, reload persistence, independent
+browsers, limits/empty input, fit/reset and wrapped-toolbar clearance. Job JSON
+and Undo remain unchanged during navigation; deliberate part drag after zoom/pan
+moves exactly with the cursor and is undoable. Blur cancellation also passes.
+Inspected `output/playwright/viewport-controls.png`; syntax/diff checks pass.
+
+Narrow `kerfgrid_app` check on nh02 passed: 6 ok / 2 changed / zero failures.
+Only the application is rolled out; no connected-controller operation is used.
+Evidence: `output/viewport-2026-10-19/`, including `rollout.json` for the final
+production asset readback and GitHub/CI receipt.
+
 ## 2026-10-19 Parts Controls And Clear Sheet
 
 User requests Parts deletion without horizontal scrolling, a nearby clear-field
@@ -28,6 +52,8 @@ Production uses only the existing `kerfgrid_app` role scope on nh02; check passe
 6 ok / 1 changed / zero failures. No live clear, CNC load or motion is performed.
 Rollout and GitHub publication receipt:
 `output/parts-controls-2026-10-19/rollout.json`.
+Published as `9fb9f70`; CI run `39235806661` passed. Apply completed with
+8 ok / 3 changed / zero failures; all three served web assets matched source.
 
 ## 2026-10-19 Completed-Part Travel And GitHub Review
 

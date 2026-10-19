@@ -42,3 +42,10 @@ The Parts panel keeps quantity and deletion controls within the sidebar width.
 previews in one undoable change. Sheet dimensions, cut settings and the server's
 original-upload library are retained. The empty project persists in the shared
 workspace; a late simulation response cannot restore a cleared preview.
+
+Viewport zoom and pan are browser-local preferences, stored separately from the
+shared project. Numeric zoom accepts 5–5000%; 100% fits the active Sheet or Parts
+view. Wheel zoom keeps the world point under the cursor fixed. Hand mode (H),
+middle-button drag and Space+left drag pan without changing placements or Undo.
+Arrow keys pan while hand mode is active. Sheet/Parts reset scale and position;
+fitting keeps geometry below the toolbar even when its controls wrap.

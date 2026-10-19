@@ -1676,3 +1676,5 @@ pw --json eval 'async () => {
 }'
 parts_controls_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/parts_controls_acceptance.js")"
 pw --json run-code "${parts_controls_acceptance}"
+viewport_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/viewport_acceptance.js")"
+pw --json run-code "${viewport_acceptance}"

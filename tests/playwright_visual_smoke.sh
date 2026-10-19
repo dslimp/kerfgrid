@@ -112,9 +112,11 @@ check_closed_path_fill='async () => {
   const rect = canvas.getBoundingClientRect();
   const ratio = canvas.width / rect.width;
   const pad = 42;
-  const scale = Math.max(0.01, Math.min((rect.width - pad * 2) / 200, (rect.height - pad * 2) / 120));
+  const topPad = Math.max(pad, document.querySelector(".view-toolbar").getBoundingClientRect().bottom - rect.top + 12);
+  const usableHeight = rect.height - topPad - pad;
+  const scale = Math.min((rect.width - pad * 2) / 200, usableHeight / 120);
   const originX = (rect.width - 200 * scale) / 2;
-  const originY = (rect.height - 120 * scale) / 2 + 120 * scale;
+  const originY = topPad + (usableHeight - 120 * scale) / 2 + 120 * scale;
   const x = Math.round((originX + 85 * scale) * ratio);
   const y = Math.round((originY - 65 * scale) * ratio);
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -239,9 +241,11 @@ check_review_only_visible_nonproduction='async () => {
   const rect = canvas.getBoundingClientRect();
   const ratio = canvas.width / rect.width;
   const pad = 42;
-  const scale = Math.max(0.01, Math.min((rect.width - pad * 2) / 200, (rect.height - pad * 2) / 120));
+  const topPad = Math.max(pad, document.querySelector(".view-toolbar").getBoundingClientRect().bottom - rect.top + 12);
+  const usableHeight = rect.height - topPad - pad;
+  const scale = Math.min((rect.width - pad * 2) / 200, usableHeight / 120);
   const originX = (rect.width - 200 * scale) / 2;
-  const originY = (rect.height - 120 * scale) / 2 + 120 * scale;
+  const originY = topPad + (usableHeight - 120 * scale) / 2 + 120 * scale;
   const current = JSON.parse(localStorage.getItem("kerfgrid.project.v1"));
   const placement = current.placements.find(item => item.part_name === "review_open");
   const sampleX = Math.round((originX + (placement.dx - 20) * scale) * ratio);

@@ -215,6 +215,7 @@ button:active {
   min-height: 0;
   background: #f9fafb;
   cursor: crosshair;
+  user-select: none;
 }
 
 .view-toolbar {
@@ -271,13 +272,46 @@ button:active {
   background: #d7dbe0;
 }
 
-.zoom-label {
-  align-self: center;
-  min-width: 42px;
-  padding: 0 4px;
+.zoom-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: #4b5563;
   font-size: 12px;
+}
+
+.zoom-control input {
+  width: 78px;
+  min-height: 30px;
+  padding: 3px 4px;
   text-align: right;
+  font-size: 12px;
+}
+
+#panViewBtn[aria-pressed="true"] {
+  border-color: #2a80b9;
+  background: #dceefa;
+}
+
+#sheetCanvas.pan-ready {
+  cursor: grab;
+}
+
+#sheetCanvas.pan-active {
+  cursor: grabbing;
+}
+
+.navigation-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: #5b6370;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  pointer-events: none;
   user-select: none;
 }
 
