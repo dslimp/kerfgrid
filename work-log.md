@@ -1,5 +1,34 @@
 # KerfGrid Work Log
 
+## 2026-10-19 Parts Controls And Clear Sheet
+
+User requests Parts deletion without horizontal scrolling, a nearby clear-field
+button and removal of duplicated lower sidebar controls. Parts now uses wrapped
+filename rows with quantity/actions underneath; long names cannot displace Del.
+Added “Очистить поле”: one undoable change clears parts, placements, zones,
+leads, tabs and stale previews while retaining sheet/process settings and the
+uploaded-file library. Empty shared state survives reload. Late simulation
+responses are discarded after clear or another simulation reset.
+
+Removed nine duplicate Job buttons and the duplicate visible import picker;
+primary commands remain in the top toolbar. Unique Reload Demo, Stop Sim and
+Review DXF moved to Templates, Sim and Code. The nest busy indicator now updates
+the primary toolbar button without replacing its SVG icon.
+
+Verification: full pytest 295 passed / 3 optional external-corpus skips;
+Playwright smoke passed, including the new `tests/parts_controls_acceptance.js`.
+The regression checks 1280/900/390 px widths, visible deletion, delete undo,
+clear/undo/redo, shared persistence/reload, retained settings and a deliberately
+delayed simulation response. Updated the existing reimport smoke to await actual
+import completion before sending again, eliminating its event timing race.
+Inspected `output/playwright/parts-controls-desktop.png`; evidence is under
+`output/parts-controls-2026-10-19/`. JavaScript syntax and diff checks pass.
+
+Production uses only the existing `kerfgrid_app` role scope on nh02; check passed
+6 ok / 1 changed / zero failures. No live clear, CNC load or motion is performed.
+Rollout and GitHub publication receipt:
+`output/parts-controls-2026-10-19/rollout.json`.
+
 ## 2026-10-19 Completed-Part Travel And GitHub Review
 
 User requests persistent safe/direct rapids, prioritizing avoidance of loose
@@ -50,6 +79,7 @@ fixture's two-second total budget; the runner correctly stopped after eight.
 Separated clock-bounded layout acceptance from complete lead-quality checking
 without a deadline. Existing deadline regression tests remain unchanged; no
 production code, budget or geometric acceptance threshold changed in this fix.
+Final review publication `3a5e947` passed GitHub CI run `39234076559`.
 
 ## 2026-10-15 Arc Stops Immediately After Ignition
 

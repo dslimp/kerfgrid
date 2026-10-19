@@ -203,7 +203,7 @@ wait_real_dxf='async () => {
   if (!(simulation.segments || []).some((segment) => segment.type === "cut")) {
     throw new Error("Watch DXF API simulation produced no cut segments");
   }
-  document.getElementById("simulateBtn").click();
+  document.getElementById("toolbarSimBtn").click();
   await waitFor(
     () => document.getElementById("simulationInfo").textContent.includes("Done"),
     "watch UI simulation completion",

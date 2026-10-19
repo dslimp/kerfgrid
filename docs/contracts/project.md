@@ -36,3 +36,9 @@ warnings.
 
 Coordinates and all dimensions are millimetres. Angles are degrees. Instance
 identity is the pair `(part_name, instance)`.
+
+The Parts panel keeps quantity and deletion controls within the sidebar width.
+“Очистить поле” clears parts, placements, zones, tabs, leads and derived job
+previews in one undoable change. Sheet dimensions, cut settings and the server's
+original-upload library are retained. The empty project persists in the shared
+workspace; a late simulation response cannot restore a cleared preview.

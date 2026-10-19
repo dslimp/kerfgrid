@@ -51,6 +51,7 @@ import {
   const selectedAllowHoleParentEl = document.getElementById("selectedAllowHoleParent");
   const undoBtn = document.getElementById("undoBtn");
   const redoBtn = document.getElementById("redoBtn");
+  const clearSheetBtn = document.getElementById("clearSheetBtn");
   const storageKey = "kerfgrid.project.v1";
   const migrationBackupKey = "kerfgrid.project.before-shared.v1";
   const projectFormat = "kerfgrid-project";
@@ -650,6 +651,7 @@ import {
 
   function updateHistoryControls() {
     const busy = Boolean(autoNesting || importing || couponImporting);
+    clearSheetBtn.disabled = busy || !project || !["parts", "placements", "zones", "tabs", "lead_overrides"].some(key => project[key]?.length);
     if (undoBtn) {
       undoBtn.disabled = busy || !undoStack.length;
       undoBtn.title = undoStack.length ? `Undo ${undoStack[undoStack.length - 1].label} (Cmd/Ctrl+Z)` : "Undo (Cmd/Ctrl+Z)";
@@ -2431,26 +2433,35 @@ import {
       fileCell.append(label, sublabel);
 
       const qtyCell = document.createElement("td");
+      qtyCell.className = "part-quantity";
+      const qtyLabel = document.createElement("span");
+      qtyLabel.textContent = "Кол-во";
       const qtyInput = document.createElement("input");
       qtyInput.className = "qty-input";
       qtyInput.type = "number";
       qtyInput.min = "1";
       qtyInput.step = "1";
       qtyInput.value = String(placementCount(part.name));
+      qtyInput.setAttribute("aria-label", `Количество: ${partSourceLabel(part)}`);
       qtyInput.addEventListener("click", (event) => event.stopPropagation());
       qtyInput.addEventListener("change", () => setPartQuantity(part.name, Number(qtyInput.value)));
-      qtyCell.appendChild(qtyInput);
+      qtyCell.append(qtyLabel, qtyInput);
 
       const issuesCell = document.createElement("td");
       const issueCount = partImportIssues(part).length;
-      issuesCell.textContent = issueCount ? String(issueCount) : "-";
-      issuesCell.className = issueCount ? "issue-count" : "";
+      issuesCell.textContent = issueCount ? `⚠ ${issueCount}` : "";
+      issuesCell.title = `Предупреждения импорта: ${issueCount}`;
+      issuesCell.className = `part-issues${issueCount ? " issue-count" : ""}`;
 
       const actionsCell = document.createElement("td");
       actionsCell.className = "part-actions";
       const addButton = partActionButton("+", () => addPartInstance(part.name));
       const removeButton = partActionButton("-", () => removePartInstance(part.name));
       const deleteButton = partActionButton("Del", () => deletePart(part.name));
+      addButton.title = "Добавить экземпляр";
+      removeButton.title = "Убрать экземпляр";
+      deleteButton.title = `Удалить деталь: ${partSourceLabel(part)}`;
+      deleteButton.setAttribute("aria-label", deleteButton.title);
       actionsCell.append(addButton, removeButton, deleteButton);
 
       row.append(fileCell, qtyCell, issuesCell, actionsCell);
@@ -2924,6 +2935,30 @@ import {
     }
   }
 
+  function clearSheet() {
+    if (!project || autoNesting || importing || couponImporting) return;
+    const history = captureMutationHistory();
+    project = { ...project, parts: [], placements: [], zones: [], tabs: [], lead_overrides: [], auto_nest: false,
+      nesting: { ...project.nesting, run_history: [] } };
+    delete project.nesting.last_result;
+    delete project.import;
+    delete project.coupon_plan;
+    selectedKey = null;
+    selectedZoneId = null;
+    dragging = null;
+    editorMode = "select";
+    validatedLayout = null;
+    invalidateSimulation();
+    rebuildProjectImportState();
+    syncControlsFromProject();
+    gcodeEl.value = "";
+    issuesEl.textContent = "No parts";
+    saveProject();
+    pushHistoryState(history, "Очистить поле");
+    draw();
+    setStatus("Поле очищено — можно отменить через Undo");
+  }
+
   function defaultPlacementForPart(part, instance, rotation = 0) {
     const bounds = rotatedPartBounds(part, rotation);
     const usable = usableSheetBounds();
@@ -3242,10 +3277,11 @@ import {
   }
 
   function setAutoNestButtonBusy(busy) {
-    const button = document.getElementById("autoNestBtn");
+    const button = document.getElementById("toolbarAutoNestBtn");
     if (!button) return;
     button.disabled = busy;
-    button.textContent = busy ? "Nesting..." : "Auto Nest";
+    button.title = busy ? "Nesting..." : "Auto nest";
+    button.setAttribute("aria-busy", String(busy));
     updateHistoryControls();
   }
 
@@ -4062,7 +4098,10 @@ import {
   async function playSimulation() {
     syncProjectFromControls();
     saveProject();
+    const requestedProject = project;
+    const requestedSimulation = simulation;
     const result = await postJson("/api/simulate", project);
+    if (project !== requestedProject || simulation !== requestedSimulation) return;
     if (result.error) {
       issuesEl.textContent = `${result.type}: ${result.error}`;
       setStatus("Simulation failed");
@@ -4486,24 +4525,16 @@ import {
   selectedGrainLockEl.addEventListener("change", applySelectedRotationControls);
   selectedAllowHoleFillerEl.addEventListener("change", applySelectedRotationControls);
   selectedAllowHoleParentEl.addEventListener("change", applySelectedRotationControls);
-  document.getElementById("autoNestBtn").addEventListener("click", autoNest);
-  document.getElementById("validateBtn").addEventListener("click", validateProject);
-  document.getElementById("exportBtn").addEventListener("click", exportGcode);
-  document.getElementById("outlineBtn").addEventListener("click", exportOutlineGcode);
   document.getElementById("reviewDxfBtn").addEventListener("click", exportReviewDxf);
-  document.getElementById("reviewReportBtn").addEventListener("click", reviewReport);
   document.getElementById("previewCutOrderBtn").addEventListener("click", previewCutOrder);
   document.getElementById("clearCutOrderPreviewBtn").addEventListener("click", clearCutOrderPreview);
-  document.getElementById("saveProjectBtn").addEventListener("click", saveProjectFile);
   document.getElementById("templateDiskBtn").addEventListener("click", () => addTemplatePart("disk"));
   document.getElementById("templatePlateBtn").addEventListener("click", () => addTemplatePart("plate"));
   document.getElementById("templateFlangeBtn").addEventListener("click", () => addTemplatePart("flange"));
-  document.getElementById("simulateBtn").addEventListener("click", playSimulation);
   document.getElementById("stopSimBtn").addEventListener("click", () => stopSimulation());
   document.getElementById("loadExampleBtn").addEventListener("click", loadExample);
   importFileEl.accept = importAcceptAny;
-  document.getElementById("importBtn").addEventListener("click", importButtonClick);
-  document.getElementById("openProjectBtn").addEventListener("click", openProjectFilePicker);
+  clearSheetBtn.addEventListener("click", clearSheet);
   [
     ["toolbarImportBtn", importButtonClick],
     ["toolbarOpenProjectBtn", openProjectFilePicker],

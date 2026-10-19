@@ -90,7 +90,10 @@
         </section>
 
         <section class="sidebar-panel active parts-panel" data-tab-panel="layout">
-          <h2>Parts</h2>
+          <div class="section-heading">
+            <h2>Parts</h2>
+            <button id="clearSheetBtn" type="button" title="Удалить все детали и зоны. Можно отменить через Undo.">Очистить поле</button>
+          </div>
           <div class="table-wrap compact-table-wrap">
             <table id="partsTable">
               <thead>
@@ -124,6 +127,7 @@
             <button id="templateDiskBtn" type="button">Disk</button>
             <button id="templatePlateBtn" type="button">Plate</button>
             <button id="templateFlangeBtn" type="button">Flange</button>
+            <button id="loadExampleBtn" type="button">Reload Demo</button>
           </div>
         </section>
 
@@ -284,8 +288,8 @@
         </section>
 
         <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Job</h2>
-          <input id="importFile" class="file-input" type="file" accept=".json,.dxf">
+          <h2>DXF import settings</h2>
+          <input id="importFile" type="file" accept=".json,.dxf" hidden>
           <label class="check-row"><input id="importUnsafeEntityWarn" type="checkbox"> Warn on unsafe DXF entities</label>
           <label>Layer mode
             <select id="importLayerMode">
@@ -298,31 +302,19 @@
             <textarea id="importLayerMapping" class="layer-map-input" rows="4" spellcheck="false" placeholder="CNC_PROFILE=cut&#10;AUX_GEOM=construction&#10;SCRATCH_PASS=mark"></textarea>
           </label>
           <div id="importLayerInfo" class="readout compact">Layer map empty</div>
-          <div class="button-grid">
-            <button id="importBtn">Import</button>
-            <button id="openProjectBtn">Open Project</button>
-            <button id="saveProjectBtn">Save Project</button>
-            <button id="autoNestBtn">Auto Nest</button>
-            <button id="validateBtn">Validate</button>
-            <button id="exportBtn">Export NGC</button>
-            <button id="outlineBtn">Outline NGC</button>
-            <button id="reviewDxfBtn">Review DXF</button>
-            <button id="reviewReportBtn">Review Report</button>
-            <button id="simulateBtn">Play Sim</button>
-            <button id="stopSimBtn">Stop Sim</button>
-            <button id="loadExampleBtn">Reload Demo</button>
-          </div>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="sim">
           <h2>Simulation</h2>
           <label>Playback x<input id="simPlayback" type="number" min="1" step="1"></label>
+          <button id="stopSimBtn" type="button">Stop Sim</button>
           <div id="simulationInfo" class="readout compact">Simulation idle</div>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="code">
           <h2>Issues</h2>
           <pre id="issues" class="sidebar-pre">No issues</pre>
+          <button id="reviewDxfBtn" type="button">Review DXF</button>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="code">

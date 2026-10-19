@@ -409,12 +409,77 @@ tbody tr.active {
   text-align: left;
 }
 
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-heading h2 {
+  margin: 0;
+}
+
+.section-heading button {
+  min-height: 32px;
+  padding: 5px 9px;
+}
+
+.parts-panel .table-wrap {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+#partsTable,
+#partsTable tbody {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+#partsTable thead {
+  display: none;
+}
+
+#partsTable tr {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid #e2e5e9;
+}
+
+#partsTable td {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  white-space: normal;
+}
+
+#partsTable .part-file-cell,
+#partsTable .muted-cell {
+  grid-column: 1 / -1;
+}
+
+#partsTable .part-quantity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+#partsTable .part-issues {
+  text-align: center;
+  font-size: 12px;
+}
+
 .part-file-cell span,
 .part-file-cell small {
   display: block;
-  max-width: 170px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .part-file-cell small {
@@ -429,6 +494,10 @@ tbody tr.active {
 
 .part-actions {
   text-align: right;
+}
+
+#partsTable .part-actions {
+  white-space: nowrap;
 }
 
 .part-actions button {

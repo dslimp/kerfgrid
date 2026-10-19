@@ -246,7 +246,7 @@ wait_project_file_roundtrip='async () => {
     if (this.download && this.download.endsWith(".kerfgrid.json")) return;
     return originalClick.call(this);
   };
-  document.getElementById("saveProjectBtn").click();
+  document.getElementById("toolbarSaveProjectBtn").click();
   const captured = await waitFor(
     () => window.__plasmaCamLastProjectDownload && window.__plasmaCamLastProjectDownload.text,
     "captured project download"
@@ -261,7 +261,7 @@ wait_project_file_roundtrip='async () => {
 
   document.getElementById("loadExampleBtn").click();
   await waitFor(() => (projectState().sheet || {}).width_mm === 1000, "demo reset before project import");
-  document.getElementById("openProjectBtn").click();
+  document.getElementById("toolbarOpenProjectBtn").click();
   const input = document.getElementById("importFile");
   if (!input.accept.includes(".kerfgrid.json")) {
     throw new Error(`Open Project did not switch file accept: ${input.accept}`);
@@ -434,7 +434,8 @@ wait_reimport_update='async () => {
         state.parts.length === 1 &&
         state.parts[0].source_file === "reimport_circle.dxf" &&
         Array.isArray(state.placements) &&
-        state.placements.length === 1;
+        state.placements.length === 1 &&
+        document.getElementById("status").textContent.includes("Imported reimport_circle.dxf");
     },
     "first DXF import"
   );
@@ -690,7 +691,7 @@ wait_export_preflight='async () => {
     }
     throw new Error(`Timed out waiting for ${label}`);
   };
-  document.getElementById("exportBtn").click();
+  document.getElementById("toolbarExportBtn").click();
   await waitFor(
     () =>
       document.getElementById("status").textContent.startsWith("Exported ") &&
@@ -1312,7 +1313,7 @@ wait_common_line_ui_sim='async () => {
     () => (document.getElementById("issues").textContent || "").includes("common_line_centerline"),
     "common-line UI validation"
   );
-  document.getElementById("simulateBtn").click();
+  document.getElementById("toolbarSimBtn").click();
   await waitFor(
     () => document.getElementById("simulationInfo").textContent.includes("Done"),
     "common-line UI simulation"
@@ -1536,7 +1537,7 @@ pw click "#mirrorBtn" >/dev/null
 pw --json eval "${wait_mirror_selected}" >/dev/null
 pw click "#loadExampleBtn" >/dev/null
 pw --json eval "${wait_demo}" >/dev/null
-pw click "#saveProjectBtn" >/dev/null
+pw click "#toolbarSaveProjectBtn" >/dev/null
 pw --json eval "${wait_save_project}" >/dev/null
 pw --json eval "${wait_project_file_roundtrip}" >/dev/null
 pw click "#loadExampleBtn" >/dev/null
@@ -1553,13 +1554,13 @@ pw click "#loadExampleBtn" >/dev/null
 pw --json eval "${wait_demo}" >/dev/null
 pw click "#duplicateBtn" >/dev/null
 pw --json eval "${wait_duplicate}" >/dev/null
-pw click "#autoNestBtn" >/dev/null
+pw click "#toolbarAutoNestBtn" >/dev/null
 pw --json eval "${wait_autonest}" >/dev/null
-pw click "#outlineBtn" >/dev/null
+pw click "#toolbarOutlineBtn" >/dev/null
 pw --json eval "${wait_outline}" >/dev/null
-pw click "#reviewReportBtn" >/dev/null
+pw click "#toolbarReportBtn" >/dev/null
 pw --json eval "${wait_review_report}" >/dev/null
-pw click "#simulateBtn" >/dev/null
+pw click "#toolbarSimBtn" >/dev/null
 pw --json eval "${wait_sim}" >/dev/null
 pw --json eval "${wait_common_line}" >/dev/null
 pw --json eval "${load_common_line_ui_project}" >/dev/null
@@ -1576,7 +1577,7 @@ pw click "#loadExampleBtn" >/dev/null
 pw --json eval "${wait_demo}" >/dev/null
 pw click "#duplicateBtn" >/dev/null
 pw --json eval "${wait_duplicate}" >/dev/null
-pw click "#autoNestBtn" >/dev/null
+pw click "#toolbarAutoNestBtn" >/dev/null
 pw --json eval "${wait_autonest}" >/dev/null
 pw press Delete >/dev/null
 pw --json eval "${wait_delete_selected}"
@@ -1597,7 +1598,7 @@ pw --json eval 'async () => {
     const started = Date.now();
     while (state().nesting?.layout_mode !== mode && Date.now() - started < 5000) await wait(50);
     if (state().nesting?.layout_mode !== mode) throw new Error(`Mode ${mode} was not saved`);
-    document.getElementById("autoNestBtn").click();
+    document.getElementById("toolbarAutoNestBtn").click();
     while (state().nesting?.last_result?.layout_mode !== mode && Date.now() - started < 20000) await wait(100);
     if (state().nesting?.last_result?.layout_mode !== mode) throw new Error(`Mode ${mode} was not used by auto nest`);
   }
@@ -1673,3 +1674,5 @@ pw --json eval 'async () => {
   }
   throw new Error("Workspace did not load after travel mode reload");
 }'
+parts_controls_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/parts_controls_acceptance.js")"
+pw --json run-code "${parts_controls_acceptance}"
