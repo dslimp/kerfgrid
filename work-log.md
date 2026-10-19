@@ -44,6 +44,13 @@ outside this application copy scope. Previously sent G-code must be regenerated
 to use the new routing. Physical tip-up, torch envelope and real controller
 loading were not replayed; native-transfer protocol tests use mocks.
 
+Published application changes as `13cfa1c` to GitHub `main`. First Linux CI run
+`39233635759` exposed a test that expected all 18 lead overrides inside the
+fixture's two-second total budget; the runner correctly stopped after eight.
+Separated clock-bounded layout acceptance from complete lead-quality checking
+without a deadline. Existing deadline regression tests remain unchanged; no
+production code, budget or geometric acceptance threshold changed in this fix.
+
 ## 2026-10-15 Arc Stops Immediately After Ignition
 
 User reports an actual arc lasting roughly 0.3 s, leaving a pierce on the sheet.

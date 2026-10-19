@@ -12,7 +12,7 @@ import plasma_cam.autonest as nesting
 from plasma_cam.nesting import Sheet
 from plasma_cam.project import NestedLayout, PartRequest, PlacedPart, Placement, validate_layout
 from plasma_cam.application.project_codec import requests_from_project
-from plasma_cam.web_api import auto_nest_project, layout_from_project, load_project, validate_project
+from plasma_cam.web_api import _apply_auto_lead_overrides, auto_nest_project, layout_from_project, load_project, validate_project
 from tools.benchmark_autonest import build_benchmark_cases, rectangle_profile
 
 
@@ -100,6 +100,7 @@ def test_compaction_preserves_locked_placement():
 
 
 def test_eighteen_tabs_find_opposing_pairs_without_existing_placements():
+    """Check layout quality within its budget and lead quality without a clock."""
     project = load_project(Path(__file__).parent / "fixtures/eave-tabs-block.project.json")
     project["parts"][0].update(quantity=18, allowed_rotations=[0, 180])
     project["placements"] = []
@@ -111,7 +112,8 @@ def test_eighteen_tabs_find_opposing_pairs_without_existing_placements():
     assert summary["used_height_mm"] < 293
     assert summary["used_bbox_area_mm2"] < 109000
     assert summary["packing_utilization_percent"] > 78
-    assert summary["auto_lead_override_count"] == 18
+    result, completed_leads = _apply_auto_lead_overrides(result, layout_from_project(result))
+    assert completed_leads == 18
     assert all(issue["code"] == "safe_travel" and not issue["blocking"] for issue in validate_project(result))
     result["post"]["travel_clearance_mm"] = 2
     assert validate_project(result) == []
