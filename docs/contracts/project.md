@@ -49,3 +49,14 @@ view. Wheel zoom keeps the world point under the cursor fixed. Hand mode (H),
 middle-button drag and Space+left drag pan without changing placements or Undo.
 Arrow keys pan while hand mode is active. Sheet/Parts reset scale and position;
 fitting keeps geometry below the toolbar even when its controls wrap.
+
+The sidebar retains daily sheet, part, nesting mode/spacing, safe-travel and
+basic cut/lead controls. “Настройки” opens a native modal with Cut Chart,
+cutting, nesting, cut order, import and template/zone tabs. Existing settings
+remain part of the shared job and save automatically; closing with Done, X or
+Escape commits the active field. Conflict/status controls remain visible inside
+the dialog. Background project adoption waits until the dialog closes; revision
+conflicts still protect concurrent changes. Drawing shortcuts are inactive while
+the modal is open. Cut Chart edits preserve Tab focus, are undoable and retain
+all process columns; small-feature columns are revealed separately. Template,
+zone creation and cut-order preview return to the drawing.

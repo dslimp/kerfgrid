@@ -9,7 +9,8 @@ are documented in `docs/contracts/`; repository workflow rules live in
 
 All computers opening the same server see the same active project, placements,
 quantities, cut settings and uploaded-file library. Changes save automatically;
-other open windows update within about 1.5 seconds. The SQLite workspace
+other open windows update within about 1.5 seconds when they are not editing
+settings. The SQLite workspace
 survives server restarts. Configure `KERFGRID_STATE_DIR` or `--state-dir`;
 nh02 uses `/var/lib/kerfgrid/workspace.sqlite3`.
 
@@ -18,6 +19,15 @@ project. Other browsers use the server version. The previous local project is
 kept separately and can be downloaded with the backup button. `localStorage`
 remains a cache/recovery draft. Stale saves are rejected; local changes remain
 available until the operator chooses which version to keep.
+
+“Настройки” opens a modal with tabs for Cut Chart, cutting, nesting, cut order,
+imports and templates/zones. The sidebar keeps daily sheet/part controls,
+placement mode and spacing, safe travel, basic cut settings and lead tools.
+Cut Chart uses a wide editable table with units, a per-row selection button and
+optional small-feature columns. Tab moves between cells without losing focus.
+Changes save automatically; Done, X and Escape commit the active field and
+close the window. Save status and concurrent-edit resolution remain available
+inside the modal. The previous local-project backup is under Settings → Import.
 
 ## Upload DXF Without A Browser
 
@@ -359,7 +369,7 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
   thickness, and nozzle.
 - Backend coupon-test project generator creates simple Fubag 40 calibration
   coupons with candidate rows and `coupon_plan` metadata for shop measurement.
-- Cut tab coupon-result import accepts pasted or file-loaded measured JSON,
+- Settings → Cut Chart coupon-result import accepts pasted or file-loaded measured JSON,
   updates the project cut chart, and persists it with the project.
 - The active starter/project/measured cut chart can be exported/imported as a
   standalone `.cut-chart.json` profile for reuse outside the current project
@@ -368,7 +378,7 @@ python3 tools/dxf_corpus_check.py /Users/user/Documents/dxf \
 - Editable project-level cut chart overrides stored in the project JSON and
   used by backend feed/kerf/pierce selection.
 - Cut-chart small-hole/small-shape rules can drive threshold, reduced feed,
-  overburn, and early torch-off values; the Cut tab can switch back to manual
+  overburn, and early torch-off values; Settings → Cutting can switch back to manual
   overrides.
 - The cut-chart table can edit small-hole diameter, small-shape diameter,
   reduced-feed percent, overburn, and early torch-off per row.

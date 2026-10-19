@@ -78,6 +78,12 @@ label {
   gap: 6px;
 }
 
+.check-row,
+.checkbox-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  justify-content: start;
+}
+
 input,
 select,
 button,
@@ -171,6 +177,249 @@ button:active {
 
 .sidebar-panel.active {
   display: block;
+}
+
+.settings-open-btn {
+  text-align: left;
+  font-weight: 600;
+}
+
+.settings-link {
+  width: 100%;
+  margin-top: 10px;
+  text-align: left;
+  font-size: 12px;
+  background: #f8f9fb;
+}
+
+#settingsDialog {
+  width: min(1440px, calc(100vw - 40px));
+  height: min(920px, calc(100dvh - 40px));
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 1px solid #c7cdd4;
+  border-radius: 12px;
+  color: inherit;
+  background: #f5f7f9;
+  box-shadow: 0 20px 80px #17202b40;
+  overflow: hidden;
+}
+
+#settingsDialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+#settingsDialog::backdrop {
+  background: #18233180;
+}
+
+.settings-header,
+.settings-footer {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 22px;
+  background: #fff;
+}
+
+.settings-header h1 {
+  font-size: 21px;
+}
+
+.settings-header p,
+.settings-help {
+  margin: 6px 0 12px;
+  color: #5b6370;
+  font-size: 13px;
+}
+
+.settings-header p {
+  margin-bottom: 0;
+}
+
+#settingsCloseBtn {
+  flex: none;
+  width: 36px;
+  padding: 4px;
+}
+
+.settings-tabs {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 22px 14px;
+  border-bottom: 1px solid #d7dbe0;
+  background: #fff;
+}
+
+.settings-tabs [aria-selected="true"] {
+  border-color: #41845c;
+  background: #dfeee5;
+  color: #12351f;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  padding: 20px 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.settings-grid-wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.settings-card {
+  min-width: 0;
+  border: 1px solid #d7dbe0;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.settings-card label:not(.stack-label):not(.check-row):not(.checkbox-row) {
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 40%);
+}
+
+.settings-footer {
+  border-top: 1px solid #d7dbe0;
+  font-size: 12px;
+}
+
+#settingsDoneBtn {
+  min-width: 110px;
+  border-color: #41845c;
+  background: #dfeee5;
+}
+
+.settings-details summary {
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.chart-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chart-table-wrap {
+  max-height: max(220px, 48dvh);
+  overscroll-behavior: contain;
+}
+
+#cutChartTable {
+  min-width: 850px;
+  table-layout: fixed;
+}
+
+#cutChartTable.show-small-features {
+  min-width: 1280px;
+}
+
+#cutChartTable:not(.show-small-features) tr > :nth-child(n+10):nth-child(-n+14) {
+  display: none;
+}
+
+#cutChartTable tr > :last-child {
+  width: 96px;
+}
+
+#cutChartTable td button {
+  min-height: 34px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+#cutChartTable th {
+  height: 56px;
+  white-space: normal;
+  text-align: left;
+  vertical-align: middle;
+  z-index: 2;
+}
+
+#cutChartTable th:nth-child(-n+2) {
+  z-index: 3;
+}
+
+#cutChartTable tr > :first-child {
+  position: sticky;
+  left: 0;
+  width: 84px;
+}
+
+#cutChartTable tr > :nth-child(2) {
+  position: sticky;
+  left: 84px;
+  width: 84px;
+}
+
+#cutChartTable td:nth-child(-n+2) {
+  z-index: 1;
+  background: #fff;
+}
+
+#cutChartTable tr.active td {
+  background: #e4f1e9;
+}
+
+#cutChartTable .table-input {
+  width: 100%;
+  min-height: 34px;
+  font-size: 14px;
+}
+
+#cutChartTable input:focus-visible,
+#settingsDialog button:focus-visible {
+  outline: 2px solid #2a80b9;
+  outline-offset: 1px;
+}
+
+@media (max-width: 950px) {
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  #settingsDialog {
+    width: calc(100vw - 12px);
+    height: calc(100dvh - 12px);
+  }
+
+  .settings-header,
+  .settings-footer,
+  .settings-body {
+    padding: 12px;
+  }
+
+  .settings-tabs {
+    padding: 0 12px 12px;
+    gap: 4px;
+  }
+
+  .settings-tabs button {
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+
+  .settings-card {
+    padding: 12px;
+  }
 }
 
 .readout {

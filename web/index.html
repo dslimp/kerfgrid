@@ -21,8 +21,9 @@
             <button id="workspaceReloadBtn" type="button">Use server version</button>
             <button id="workspaceKeepLocalBtn" type="button">Use my version</button>
           </div>
-          <button id="localProjectBackupBtn" type="button" hidden>Download previous local project</button>
         </div>
+
+        <button id="settingsBtn" class="settings-open-btn" type="button" data-settings-open="">⚙ Настройки</button>
 
         <nav class="tab-strip" aria-label="Sidebar sections">
           <button class="tab-btn active" type="button" data-tab="layout">Layout</button>
@@ -36,57 +37,6 @@
           <h2>Sheet</h2>
           <label>Width mm<input id="sheetWidth" type="number" min="1" step="1"></label>
           <label>Height mm<input id="sheetHeight" type="number" min="1" step="1"></label>
-        </section>
-
-        <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Manual</h2>
-          <label class="check-row"><input id="snapEnabled" type="checkbox"> Snap</label>
-          <label>Snap mm<input id="snapMm" type="number" min="0.1" step="0.1"></label>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="nest">
-          <h2>Nesting</h2>
-          <label class="stack-label">Размещение
-            <select id="nestLayoutMode">
-              <option value="compact">Компактно от нуля</option>
-              <option value="strip">В линию вдоль X</option>
-            </select>
-          </label>
-          <label>Spacing mm<input id="spacing" type="number" min="0" step="1"></label>
-          <label>Nest runs<input id="nestAttempts" type="number" min="1" max="240" step="1"></label>
-          <label>Angle step deg<input id="nestAngleStep" type="number" min="1" max="90" step="1"></label>
-          <label>Optimization limit s<input id="nestMaxRuntime" type="number" min="1" max="120" step="1"></label>
-          <label>Workers (0 auto)<input id="nestWorkers" type="number" min="0" max="16" step="1"></label>
-          <label>Any rotation<input id="allowArbitraryRotation" type="checkbox"></label>
-          <label>Use holes<input id="allowHoleFiller" type="checkbox"></label>
-          <label>Common line<input id="commonLineCutting" type="checkbox"></label>
-          <div id="nestingInfo" class="readout compact">No nesting run</div>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="nest">
-          <h2>Nest Log</h2>
-          <div id="nestHistory" class="readout compact">No run history</div>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="nest">
-          <h2>Холостые переходы</h2>
-          <label class="check-row"><input id="safeTravel" type="checkbox"> Обходить вырезанные детали</label>
-          <label>Запас обхода, мм<input id="travelClearance" type="number" min="0" step="0.5"></label>
-          <div id="travelModeInfo" class="readout compact"></div>
-        </section>
-
-        <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Zones</h2>
-          <div class="button-grid">
-            <button id="addKeepoutBtn" type="button">Keepout</button>
-            <button id="addClampBtn" type="button">Clamp</button>
-            <button id="addDamagedBtn" type="button">Damaged</button>
-            <button id="addRemnantBtn" type="button">Remnant</button>
-            <button id="addPierceKeepoutBtn" type="button">Pierce KO</button>
-            <button id="addSlatBtn" type="button">Slat</button>
-            <button id="deleteZoneBtn" type="button">Delete Zone</button>
-          </div>
-          <div id="zonesList" class="readout compact">No zones</div>
         </section>
 
         <section class="sidebar-panel active parts-panel" data-tab-panel="layout">
@@ -110,25 +60,37 @@
         </section>
 
         <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Uploaded files</h2>
-          <div id="workspaceFiles" class="workspace-files">No uploaded files</div>
+          <h2>Selected</h2>
+          <div id="selectedInfo" class="readout">None</div>
+          <div class="button-grid">
+            <button id="duplicateBtn">Duplicate</button>
+            <button id="rotateBtn">Rotate 90</button>
+            <button id="mirrorBtn">Mirror</button>
+            <button id="lockBtn">Lock</button>
+            <button id="deleteBtn">Delete</button>
+          </div>
+          <button type="button" class="settings-link" data-settings-open="nesting">Ограничения выбранной детали →</button>
         </section>
 
-        <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Templates</h2>
-          <label>Outer DIA mm<input id="templateOuterDia" type="number" min="1" step="1"></label>
-          <label>Center DIA mm<input id="templateCenterDia" type="number" min="0" step="1"></label>
-          <label>Width mm<input id="templateWidth" type="number" min="1" step="1"></label>
-          <label>Height mm<input id="templateHeight" type="number" min="1" step="1"></label>
-          <label>Bolt count<input id="templateBoltCount" type="number" min="0" max="24" step="1"></label>
-          <label>Bolt PCD mm<input id="templateBoltCircleDia" type="number" min="0" step="1"></label>
-          <label>Bolt DIA mm<input id="templateBoltDia" type="number" min="0" step="0.5"></label>
-          <div class="button-grid">
-            <button id="templateDiskBtn" type="button">Disk</button>
-            <button id="templatePlateBtn" type="button">Plate</button>
-            <button id="templateFlangeBtn" type="button">Flange</button>
-            <button id="loadExampleBtn" type="button">Reload Demo</button>
-          </div>
+        <section class="sidebar-panel" data-tab-panel="nest">
+          <h2>Nesting</h2>
+          <label class="stack-label">Размещение
+            <select id="nestLayoutMode">
+              <option value="compact">Компактно от нуля</option>
+              <option value="strip">В линию вдоль X</option>
+            </select>
+          </label>
+          <label>Spacing mm<input id="spacing" type="number" min="0" step="1"></label>
+          <div id="nestingInfo" class="readout compact">No nesting run</div>
+          <button type="button" class="settings-link" data-settings-open="nesting">Параметры размещения →</button>
+        </section>
+
+        <section class="sidebar-panel" data-tab-panel="nest">
+          <h2>Холостые переходы</h2>
+          <label class="check-row"><input id="safeTravel" type="checkbox"> Обходить вырезанные детали</label>
+          <label>Запас обхода, мм<input id="travelClearance" type="number" min="0" step="0.5"></label>
+          <div id="travelModeInfo" class="readout compact"></div>
+          <button type="button" class="settings-link" data-settings-open="order">Порядок реза и предпросмотр →</button>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="cut">
@@ -147,38 +109,8 @@
             </select>
           </label>
           <label>Manual mm/min<input id="manualFeed" type="number" min="1" step="10"></label>
-          <label>QtPlasmaC
-            <select id="materialMode">
-              <option value="temporary">Temporary material</option>
-              <option value="fixed">Fixed material</option>
-            </select>
-          </label>
-          <label>Material #<input id="materialNumber" type="number" min="0" step="1"></label>
-          <label>Wait s<input id="materialWait" type="number" min="0" step="0.1"></label>
           <div id="cutSettingsInfo" class="readout compact">Loading</div>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="cut">
-          <h2>Cut Order</h2>
-          <label>Strategy
-            <select id="cutOrderStrategy">
-              <option value="nearest">Nearest</option>
-              <option value="lower_left">Lower-left</option>
-              <option value="heat_spread">Heat spread</option>
-            </select>
-          </label>
-          <label class="check-row"><input id="optimizeCutOrder" type="checkbox"> Optimize order</label>
-          <label class="check-row"><input id="keepPartContoursTogether" type="checkbox"> Keep part contours</label>
-          <label>Heat weight<input id="heatSpreadWeight" type="number" min="0" step="0.05"></label>
-          <label>Heat lookback<input id="heatLookback" type="number" min="1" max="20" step="1"></label>
-          <label class="stack-label">Manual groups
-            <textarea id="cutOrderGroups" class="cut-order-groups-input" rows="4" spellcheck="false" placeholder="part_2_1&#10;part_1_1&#10;part_3"></textarea>
-          </label>
-          <div class="button-grid">
-            <button id="previewCutOrderBtn" type="button">Preview Order</button>
-            <button id="clearCutOrderPreviewBtn" type="button">Clear Preview</button>
-          </div>
-          <div id="cutOrderInfo" class="readout compact">Automatic order</div>
+          <button type="button" class="settings-link" data-settings-open="chart">Cut Chart — таблица режимов →</button>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="cut">
@@ -193,27 +125,6 @@
           </label>
           <label>Length mm<input id="leadLength" type="number" min="0" step="0.1"></label>
           <label>Lead-out mm<input id="leadOutLength" type="number" min="0" step="0.1"></label>
-          <label>Min hole DIA mm<input id="leadHoleMin" type="number" min="0" step="0.1"></label>
-          <label>Crater DIA mm<input id="pierceCrater" type="number" min="0" step="0.1"></label>
-          <label>Lead clearance mm<input id="leadClearance" type="number" min="0" step="0.1"></label>
-          <label>Small rules
-            <select id="smallFeatureSource">
-              <option value="cut_chart">Cut chart</option>
-              <option value="manual">Manual</option>
-            </select>
-          </label>
-          <label>Small hole DIA mm<input id="smallHoleThreshold" type="number" min="0" step="0.1"></label>
-          <label>Small shape DIA mm<input id="smallShapeThreshold" type="number" min="0" step="0.1"></label>
-          <label>Small hole speed %<input id="smallHoleSpeed" type="number" min="1" max="100" step="1"></label>
-          <label>Overburn mm<input id="smallFeatureOverburn" type="number" min="0" step="0.1"></label>
-          <label>Early off mm<input id="smallFeatureEarlyOff" type="number" min="0" step="0.1"></label>
-          <label>Tab length mm<input id="tabLength" type="number" min="0" step="0.5"></label>
-          <label class="checkbox-row"><input id="autoTabs" type="checkbox"> Auto tabs</label>
-          <label>Auto tab count<input id="autoTabCount" type="number" min="1" max="12" step="1"></label>
-          <label>Auto tab length mm<input id="autoTabLength" type="number" min="0" step="0.5"></label>
-          <label>Auto tab min DIA mm<input id="autoTabMinDiameter" type="number" min="0" step="1"></label>
-          <label class="checkbox-row"><input id="centerlineFallback" type="checkbox"> Centerline fallback</label>
-          <label class="checkbox-row"><input id="openPathCenterline" type="checkbox"> Open paths centerline</label>
           <div class="button-grid">
             <button id="selectModeBtn" type="button">Select</button>
             <button id="leadEditBtn" type="button">Lead Point</button>
@@ -224,84 +135,7 @@
             <button id="clearTabsBtn" type="button">Clear Tabs</button>
           </div>
           <div id="leadEditInfo" class="readout compact">Select</div>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="cut">
-          <h2>Cut Chart</h2>
-          <input id="cutChartProfileFile" class="file-input" type="file" accept=".json,.cut-chart.json,application/json">
-          <div class="table-wrap compact-table-wrap">
-            <table id="cutChartTable">
-              <thead>
-                <tr>
-                  <th>mm</th>
-                  <th>Noz</th>
-                  <th>A</th>
-                  <th>Feed</th>
-                  <th>Kerf</th>
-                  <th>Pierce</th>
-                  <th>Cut H</th>
-                  <th>V</th>
-                  <th>THC</th>
-                  <th>SHole</th>
-                  <th>SShape</th>
-                  <th>S%</th>
-                  <th>OB</th>
-                  <th>EO</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-          <div class="button-grid">
-            <button id="resetCutChartBtn" type="button">Reset Starter Chart</button>
-            <button id="exportCutChartBtn" type="button">Export Chart</button>
-          </div>
-          <div id="cutChartInfo" class="readout compact">Starter chart</div>
-        </section>
-
-        <section class="sidebar-panel" data-tab-panel="cut">
-          <h2>Coupon Results</h2>
-          <input id="couponResultsFile" class="file-input" type="file" accept=".json,application/json">
-          <label class="stack-label">Measured JSON
-            <textarea id="couponResultsInput" class="coupon-results-input" rows="6" spellcheck="false" placeholder='{"revision":"shop-r1","results":[{"material":"mild_steel","thickness_mm":3,"nozzle_mm":0.9,"current_a":35,"feed_rate_mm_min":1120,"kerf_width_mm":1.34,"pierce_delay_s":0.48,"cut_height_mm":1.45,"arc_voltage_v":104.5,"thc_enabled":false,"coupon_id":"coupon-17","operator":"shop","measured_at":"2026-08-23T10:00:00Z"}]}'></textarea>
-          </label>
-          <div class="button-grid">
-            <button id="importCouponResultsBtn" type="button">Import Coupon Results</button>
-          </div>
-          <div id="couponResultsInfo" class="readout compact">Paste measured coupon JSON</div>
-        </section>
-
-        <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>Selected</h2>
-          <div id="selectedInfo" class="readout">None</div>
-          <label>Rotations deg<input id="selectedRotations" type="text" placeholder="0,90,180,270"></label>
-          <label class="check-row"><input id="selectedGrainLock" type="checkbox"> Grain lock</label>
-          <label class="check-row"><input id="selectedAllowHoleFiller" type="checkbox"> Can fill holes</label>
-          <label class="check-row"><input id="selectedAllowHoleParent" type="checkbox"> Can host fillers</label>
-          <div class="button-grid">
-            <button id="duplicateBtn">Duplicate</button>
-            <button id="rotateBtn">Rotate 90</button>
-            <button id="mirrorBtn">Mirror</button>
-            <button id="lockBtn">Lock</button>
-            <button id="deleteBtn">Delete</button>
-          </div>
-        </section>
-
-        <section class="sidebar-panel active" data-tab-panel="layout">
-          <h2>DXF import settings</h2>
-          <input id="importFile" type="file" accept=".json,.dxf" hidden>
-          <label class="check-row"><input id="importUnsafeEntityWarn" type="checkbox"> Warn on unsafe DXF entities</label>
-          <label>Layer mode
-            <select id="importLayerMode">
-              <option value="heuristic">Auto layers</option>
-              <option value="cut_all">Cut all layers</option>
-              <option value="mapped_only">Mapped only</option>
-            </select>
-          </label>
-          <label class="stack-label">Layer map
-            <textarea id="importLayerMapping" class="layer-map-input" rows="4" spellcheck="false" placeholder="CNC_PROFILE=cut&#10;AUX_GEOM=construction&#10;SCRATCH_PASS=mark"></textarea>
-          </label>
-          <div id="importLayerInfo" class="readout compact">Layer map empty</div>
+          <button type="button" class="settings-link" data-settings-open="cutting">Врезки, малые контуры и перемычки →</button>
         </section>
 
         <section class="sidebar-panel" data-tab-panel="sim">
@@ -321,6 +155,8 @@
           <h2>G-code</h2>
           <textarea id="gcode" class="sidebar-code" spellcheck="false"></textarea>
         </section>
+        <input id="importFile" type="file" accept=".json,.dxf" hidden>
+
       </aside>
 
       <main class="workspace">
@@ -381,6 +217,241 @@
         </div>
       </main>
     </div>
+
+    <dialog id="settingsDialog" aria-labelledby="settingsTitle" aria-describedby="settingsSaveHint">
+      <header class="settings-header">
+        <div><h1 id="settingsTitle">Настройки</h1><p id="settingsSaveHint">Изменения сохраняются автоматически в текущем задании.</p></div>
+        <button id="settingsCloseBtn" type="button" aria-label="Закрыть настройки" title="Закрыть (Esc)">✕</button>
+      </header>
+      <nav class="settings-tabs" role="tablist" aria-label="Разделы настроек">
+        <button id="settings-tab-chart" type="button" role="tab" aria-controls="settings-panel-chart" aria-selected="true" tabindex="0" data-settings-tab="chart">Cut Chart</button>
+        <button id="settings-tab-cutting" type="button" role="tab" aria-controls="settings-panel-cutting" aria-selected="false" tabindex="-1" data-settings-tab="cutting">Резка</button>
+        <button id="settings-tab-nesting" type="button" role="tab" aria-controls="settings-panel-nesting" aria-selected="false" tabindex="-1" data-settings-tab="nesting">Размещение</button>
+        <button id="settings-tab-order" type="button" role="tab" aria-controls="settings-panel-order" aria-selected="false" tabindex="-1" data-settings-tab="order">Порядок реза</button>
+        <button id="settings-tab-import" type="button" role="tab" aria-controls="settings-panel-import" aria-selected="false" tabindex="-1" data-settings-tab="import">Импорт</button>
+        <button id="settings-tab-stock" type="button" role="tab" aria-controls="settings-panel-stock" aria-selected="false" tabindex="-1" data-settings-tab="stock">Шаблоны и зоны</button>
+      </nav>
+      <div class="settings-body">
+        <div id="settings-panel-chart" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-chart" tabindex="0">
+          <div class="settings-grid settings-grid-wide">
+        <section class="settings-card">
+          <h2>Cut Chart</h2>
+          <p class="settings-help">Изменяйте значения прямо в таблице. «Выбрать» применяет режим к текущему резу. Активная строка выделена зелёным.</p>
+          <input id="cutChartProfileFile" type="file" accept=".json,.cut-chart.json,application/json" hidden>
+          <div class="chart-toolbar">
+            <button id="importCutChartBtn" type="button">Загрузить таблицу</button>
+            <button id="exportCutChartBtn" type="button">Скачать таблицу</button>
+            <button id="resetCutChartBtn" type="button">Сбросить к исходной</button>
+          </div>
+          <label class="check-row"><input id="chartSmallFeatures" type="checkbox"> Малые контуры: ещё 5 столбцов</label>
+          <div class="table-wrap chart-table-wrap" tabindex="0" aria-label="Таблица режимов реза, прокручивается">
+            <table id="cutChartTable">
+              <thead>
+                <tr>
+                  <th scope="col">Толщина<br>мм</th>
+                  <th scope="col">Сопло<br>мм</th>
+                  <th scope="col">Ток<br>А</th>
+                  <th scope="col">Скорость<br>мм/мин</th>
+                  <th scope="col">Ширина реза<br>мм</th>
+                  <th scope="col">Прожиг<br>с</th>
+                  <th scope="col">Высота реза<br>мм</th>
+                  <th scope="col">Дуга<br>В</th>
+                  <th scope="col">THC</th>
+                  <th scope="col">Малое отверстие<br>Ø мм</th>
+                  <th scope="col">Малый контур<br>Ø мм</th>
+                  <th scope="col">Скорость малых<br>%</th>
+                  <th scope="col">Перерез<br>мм</th>
+                  <th scope="col">Раннее выкл.<br>мм</th>
+                  <th scope="col">Режим</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="cutChartInfo" class="readout compact">Starter chart</div>
+        </section>
+          <details class="settings-details"><summary>Импорт результатов пробных резов (JSON)</summary>
+        <section class="settings-card">
+          <h2>Измеренные результаты реза</h2>
+          <input id="couponResultsFile" class="file-input" type="file" accept=".json,application/json">
+          <label class="stack-label">Measured JSON
+            <textarea id="couponResultsInput" class="coupon-results-input" rows="6" spellcheck="false" placeholder='{"revision":"shop-r1","results":[{"material":"mild_steel","thickness_mm":3,"nozzle_mm":0.9,"current_a":35,"feed_rate_mm_min":1120,"kerf_width_mm":1.34,"pierce_delay_s":0.48,"cut_height_mm":1.45,"arc_voltage_v":104.5,"thc_enabled":false,"coupon_id":"coupon-17","operator":"shop","measured_at":"2026-08-23T10:00:00Z"}]}'></textarea>
+          </label>
+          <div class="button-grid">
+            <button id="importCouponResultsBtn" type="button">Import Coupon Results</button>
+          </div>
+          <div id="couponResultsInfo" class="readout compact">Paste measured coupon JSON</div>
+        </section>
+          </details>
+          </div>
+        </div>
+        <div id="settings-panel-cutting" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-cutting" tabindex="0" hidden>
+          <div class="settings-grid">
+          <section class="settings-card">
+            <h2>Врезки и малые контуры</h2>
+          <label>Min hole DIA mm<input id="leadHoleMin" type="number" min="0" step="0.1"></label>
+          <label>Crater DIA mm<input id="pierceCrater" type="number" min="0" step="0.1"></label>
+          <label>Lead clearance mm<input id="leadClearance" type="number" min="0" step="0.1"></label>
+          <label>Small rules
+            <select id="smallFeatureSource">
+              <option value="cut_chart">Cut chart</option>
+              <option value="manual">Manual</option>
+            </select>
+          </label>
+          <label>Small hole DIA mm<input id="smallHoleThreshold" type="number" min="0" step="0.1"></label>
+          <label>Small shape DIA mm<input id="smallShapeThreshold" type="number" min="0" step="0.1"></label>
+          <label>Small hole speed %<input id="smallHoleSpeed" type="number" min="1" max="100" step="1"></label>
+          <label>Overburn mm<input id="smallFeatureOverburn" type="number" min="0" step="0.1"></label>
+          <label>Early off mm<input id="smallFeatureEarlyOff" type="number" min="0" step="0.1"></label>
+          </section>
+          <section class="settings-card">
+            <h2>Перемычки и обработка контуров</h2>
+          <label>Tab length mm<input id="tabLength" type="number" min="0" step="0.5"></label>
+          <label class="checkbox-row"><input id="autoTabs" type="checkbox"> Auto tabs</label>
+          <label>Auto tab count<input id="autoTabCount" type="number" min="1" max="12" step="1"></label>
+          <label>Auto tab length mm<input id="autoTabLength" type="number" min="0" step="0.5"></label>
+          <label>Auto tab min DIA mm<input id="autoTabMinDiameter" type="number" min="0" step="1"></label>
+          <label class="checkbox-row"><input id="centerlineFallback" type="checkbox"> Centerline fallback</label>
+          <label class="checkbox-row"><input id="openPathCenterline" type="checkbox"> Open paths centerline</label>
+          </section>
+          <section class="settings-card">
+            <h2>QtPlasmaC — выбор материала</h2>
+          <label>QtPlasmaC
+            <select id="materialMode">
+              <option value="temporary">Temporary material</option>
+              <option value="fixed">Fixed material</option>
+            </select>
+          </label>
+          <label>Material #<input id="materialNumber" type="number" min="0" step="1"></label>
+          <label>Wait s<input id="materialWait" type="number" min="0" step="0.1"></label>
+          </section>
+          </div>
+        </div>
+        <div id="settings-panel-nesting" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-nesting" tabindex="0" hidden>
+          <div class="settings-grid">
+          <section class="settings-card">
+            <h2>Поиск размещения</h2>
+          <label>Nest runs<input id="nestAttempts" type="number" min="1" max="240" step="1"></label>
+          <label>Angle step deg<input id="nestAngleStep" type="number" min="1" max="90" step="1"></label>
+          <label>Optimization limit s<input id="nestMaxRuntime" type="number" min="1" max="120" step="1"></label>
+          <label>Workers (0 auto)<input id="nestWorkers" type="number" min="0" max="16" step="1"></label>
+          <label class="check-row"><input id="allowArbitraryRotation" type="checkbox"> Any rotation</label>
+          <label class="check-row"><input id="allowHoleFiller" type="checkbox"> Use holes</label>
+          <label class="check-row"><input id="commonLineCutting" type="checkbox"> Common line</label>
+          </section>
+          <section class="settings-card">
+            <h2>Выбранная деталь</h2>
+<p class="settings-help">Ограничения применяются к детали, выбранной на поле.</p>
+          <label>Rotations deg<input id="selectedRotations" type="text" placeholder="0,90,180,270"></label>
+          <label class="check-row"><input id="selectedGrainLock" type="checkbox"> Grain lock</label>
+          <label class="check-row"><input id="selectedAllowHoleFiller" type="checkbox"> Can fill holes</label>
+          <label class="check-row"><input id="selectedAllowHoleParent" type="checkbox"> Can host fillers</label>
+          </section>
+        <section class="settings-card">
+          <h2>Nest Log</h2>
+          <div id="nestHistory" class="readout compact">No run history</div>
+        </section>
+          </div>
+        </div>
+        <div id="settings-panel-order" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-order" tabindex="0" hidden>
+          <div class="settings-grid">
+        <section class="settings-card">
+          <h2>Cut Order</h2>
+          <label>Strategy
+            <select id="cutOrderStrategy">
+              <option value="nearest">Nearest</option>
+              <option value="lower_left">Lower-left</option>
+              <option value="heat_spread">Heat spread</option>
+            </select>
+          </label>
+          <label class="check-row"><input id="optimizeCutOrder" type="checkbox"> Optimize order</label>
+          <label class="check-row"><input id="keepPartContoursTogether" type="checkbox"> Keep part contours</label>
+          <label>Heat weight<input id="heatSpreadWeight" type="number" min="0" step="0.05"></label>
+          <label>Heat lookback<input id="heatLookback" type="number" min="1" max="20" step="1"></label>
+          <label class="stack-label">Manual groups
+            <textarea id="cutOrderGroups" class="cut-order-groups-input" rows="4" spellcheck="false" placeholder="part_2_1&#10;part_1_1&#10;part_3"></textarea>
+          </label>
+          <div class="button-grid">
+            <button id="previewCutOrderBtn" data-settings-exit type="button">Preview Order</button>
+            <button id="clearCutOrderPreviewBtn" type="button">Clear Preview</button>
+          </div>
+          <div id="cutOrderInfo" class="readout compact">Automatic order</div>
+        </section>
+          </div>
+        </div>
+        <div id="settings-panel-import" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-import" tabindex="0" hidden>
+          <div class="settings-grid">
+        <section class="settings-card">
+          <h2>DXF import settings</h2>
+          <label class="check-row"><input id="importUnsafeEntityWarn" type="checkbox"> Warn on unsafe DXF entities</label>
+          <label>Layer mode
+            <select id="importLayerMode">
+              <option value="heuristic">Auto layers</option>
+              <option value="cut_all">Cut all layers</option>
+              <option value="mapped_only">Mapped only</option>
+            </select>
+          </label>
+          <label class="stack-label">Layer map
+            <textarea id="importLayerMapping" class="layer-map-input" rows="4" spellcheck="false" placeholder="CNC_PROFILE=cut&#10;AUX_GEOM=construction&#10;SCRATCH_PASS=mark"></textarea>
+          </label>
+          <div id="importLayerInfo" class="readout compact">Layer map empty</div>
+        </section>
+        <section class="settings-card">
+          <h2>Uploaded files</h2>
+          <button id="localProjectBackupBtn" type="button" hidden>Download previous local project</button>
+          <div id="workspaceFiles" class="workspace-files">No uploaded files</div>
+        </section>
+          </div>
+        </div>
+        <div id="settings-panel-stock" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-stock" tabindex="0" hidden>
+          <div class="settings-grid">
+        <section class="settings-card">
+          <h2>Шаблоны деталей</h2><p class="settings-help">Создание детали вернёт вас на поле.</p>
+          <label>Outer DIA mm<input id="templateOuterDia" type="number" min="1" step="1"></label>
+          <label>Center DIA mm<input id="templateCenterDia" type="number" min="0" step="1"></label>
+          <label>Width mm<input id="templateWidth" type="number" min="1" step="1"></label>
+          <label>Height mm<input id="templateHeight" type="number" min="1" step="1"></label>
+          <label>Bolt count<input id="templateBoltCount" type="number" min="0" max="24" step="1"></label>
+          <label>Bolt PCD mm<input id="templateBoltCircleDia" type="number" min="0" step="1"></label>
+          <label>Bolt DIA mm<input id="templateBoltDia" type="number" min="0" step="0.5"></label>
+          <div class="button-grid">
+            <button id="templateDiskBtn" data-settings-exit type="button">Disk</button>
+            <button id="templatePlateBtn" data-settings-exit type="button">Plate</button>
+            <button id="templateFlangeBtn" data-settings-exit type="button">Flange</button>
+            <button id="loadExampleBtn" data-settings-exit type="button">Reload Demo</button>
+          </div>
+        </section>
+        <section class="settings-card">
+          <h2>Зоны листа</h2><p class="settings-help">Добавьте зону, затем переместите её на поле мышью.</p>
+          <div class="button-grid">
+            <button id="addKeepoutBtn" data-settings-exit type="button">Keepout</button>
+            <button id="addClampBtn" data-settings-exit type="button">Clamp</button>
+            <button id="addDamagedBtn" data-settings-exit type="button">Damaged</button>
+            <button id="addRemnantBtn" data-settings-exit type="button">Remnant</button>
+            <button id="addPierceKeepoutBtn" data-settings-exit type="button">Pierce KO</button>
+            <button id="addSlatBtn" data-settings-exit type="button">Slat</button>
+            <button id="deleteZoneBtn" type="button">Delete Zone</button>
+          </div>
+          <div id="zonesList" class="readout compact">No zones</div>
+        </section>
+        <section class="settings-card">
+          <h2>Manual</h2>
+          <label class="check-row"><input id="snapEnabled" type="checkbox"> Snap</label>
+          <label>Snap mm<input id="snapMm" type="number" min="0.1" step="0.1"></label>
+        </section>
+          </div>
+        </div>
+      </div>
+      <footer class="settings-footer">
+        <div><span id="settingsSyncStatus" role="status">Connecting to shared workspace…</span>
+          <div id="settingsConflict" hidden>
+            <button id="settingsReloadBtn" type="button">Use server version</button>
+            <button id="settingsKeepLocalBtn" type="button">Use my version</button>
+          </div>
+        </div>
+        <button id="settingsDoneBtn" type="button">Готово</button>
+      </footer>
+    </dialog>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

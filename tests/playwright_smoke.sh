@@ -1678,3 +1678,5 @@ parts_controls_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/parts_controls_
 pw --json run-code "${parts_controls_acceptance}"
 viewport_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/viewport_acceptance.js")"
 pw --json run-code "${viewport_acceptance}"
+settings_dialog_acceptance="$(cat "$(dirname "${BASH_SOURCE[0]}")/settings_dialog_acceptance.js")"
+pw --json run-code "${settings_dialog_acceptance}"

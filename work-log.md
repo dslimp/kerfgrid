@@ -1,5 +1,34 @@
 # KerfGrid Work Log
 
+## 2026-10-19 Tabbed Settings Dialog
+
+User requests a modal settings window with tabs and a usable Cut Chart. Added
+native dialog tabs for chart, cutting, nesting, cut order, imports and
+stock/templates/zones. Sidebar retains sheet/parts/selection, layout mode,
+spacing, safe travel, basic process and lead tools. Cut Chart has a wide table
+with units, explicit row selection, optional small-feature columns and stable
+Tab editing. Existing controls and job fields are preserved without duplicates.
+Local-project recovery and uploaded files moved into Import settings.
+
+Changes retain shared autosave; Done/X/Escape commit the active field. The
+modal traps focus, restores the opener and blocks background drawing shortcuts.
+Background project adoption waits while settings are open; both conflict
+choices remain available inside the modal. Templates/zones and cut-order
+preview close the dialog to return to the drawing. Chart edits/select/reset/
+import invalidate stale simulation and G-code; Undo and server adoption refresh
+the displayed chart without rebuilding a cell during typing.
+
+Verification: full pytest 295 passed / 3 optional external-corpus skips. Focused
+browser acceptance covers six tabs at 1280/900/390 px, keyboard/focus isolation,
+cell Tab/escape commits, visible chart Undo, edited row selection, file picker,
+advanced persistence/reload, both concurrent-edit choices and template return.
+Required full Playwright smoke and visual smoke passed; inspected chart,
+nesting and sidebar screenshots under `output/playwright/settings-*.png`.
+Syntax/diff checks pass. Verification logs and final rollout/publication receipt:
+`output/settings-dialog-2026-10-19/rollout.json`.
+Narrow nh02 `kerfgrid_app` check passed:
+6 ok / 1 changed / zero failures. No CNC load, movement or ignition is performed.
+
 ## 2026-10-19 Viewport Zoom And Pan
 
 User requests explicit scale entry and navigation around the drawing. Added

@@ -1,5 +1,6 @@
 import { downloadText, fileSafeName, postJson } from "./js/http.js";
 import { SharedWorkspace } from "./js/workspace.js";
+import { setupSettingsDialog } from "./js/settings.js";
 import { completedCutPaths, pointAtTime, pointsUntilTime } from "./js/simulation.js";
 import {
   boundedHoleRadius,
@@ -33,6 +34,7 @@ import {
   const simulationInfoEl = document.getElementById("simulationInfo");
   const cutChartTableEl = document.getElementById("cutChartTable");
   const cutChartInfoEl = document.getElementById("cutChartInfo");
+  const settingsDialogEl = document.getElementById("settingsDialog");
   const partsTableEl = document.getElementById("partsTable");
   const zoomPercentEl = document.getElementById("zoomPercent");
   const panViewBtn = document.getElementById("panViewBtn");
@@ -188,6 +190,8 @@ import {
     onState({ status, files = [], conflict = false }) {
       document.getElementById("workspaceStatus").textContent = status;
       document.getElementById("workspaceConflict").hidden = !conflict;
+      document.getElementById("settingsSyncStatus").textContent = status;
+      document.getElementById("settingsConflict").hidden = !conflict;
       const list = document.getElementById("workspaceFiles");
       list.replaceChildren();
       for (const file of files) {
@@ -199,7 +203,7 @@ import {
       }
       if (!files.length) list.textContent = "No uploaded files";
     },
-    isBusy: () => Boolean(dragging || panning || autoNesting || importing || couponImporting || pendingControlHistory),
+    isBusy: () => Boolean(dragging || panning || autoNesting || importing || couponImporting || pendingControlHistory || settingsDialogEl.open),
   });
 
   function keyForPlacement(placement) {
@@ -622,6 +626,7 @@ import {
     dragging = null;
     invalidateSimulation();
     syncControlsFromProject();
+    renderCutChart({ refresh: false });
     saveProject();
     draw();
     validateProject();
@@ -735,6 +740,7 @@ import {
     selectedKey = firstSelectablePlacementKey();
     invalidateSimulation();
     syncControlsFromProject();
+    renderCutChart({ refresh: false });
     gcodeEl.value = "";
     issuesEl.textContent = "";
     saveProject();
@@ -3234,6 +3240,7 @@ import {
   }
 
   function handleKeyboard(event) {
+    if (settingsDialogEl.open) return;
     if (isEditableTarget(event.target)) return;
     const key = event.key.toLowerCase();
     const command = event.metaKey || event.ctrlKey;
@@ -3998,9 +4005,16 @@ import {
     if (!row) return;
     row[field] = value;
     chart.version = new Date().toISOString();
+    invalidateSimulation();
+    gcodeEl.value = "";
     saveProject();
     pushHistoryState(history, "Cut chart");
-    renderCutChart();
+    const tableRow = cutChartTableEl.querySelector(`tr[data-index="${index}"]`);
+    if (tableRow) {
+      tableRow.dataset.thickness = String(row.thickness_mm);
+      tableRow.dataset.nozzle = String(row.nozzle_mm);
+    }
+    updateCutChartInfo();
     validateProject();
   }
 
@@ -4011,6 +4025,8 @@ import {
     }
     const history = captureMutationHistory();
     project.cut_chart = null;
+    invalidateSimulation();
+    gcodeEl.value = "";
     saveProject();
     pushHistoryState(history, "Reset cut chart");
     renderCutChart();
@@ -4082,6 +4098,8 @@ import {
       if (settings.error) {
         throw new Error(`Cut chart profile rejected: ${settings.error}`);
       }
+      invalidateSimulation();
+      gcodeEl.value = "";
       saveProject();
       pushHistoryState(history, "Import cut chart");
       renderCutChart();
@@ -4099,7 +4117,7 @@ import {
     }
   }
 
-  function renderCutChart() {
+  function renderCutChart({ refresh = true } = {}) {
     const body = cutChartTableEl.querySelector("tbody");
     body.textContent = "";
     const rows = activeCutChartRows();
@@ -4124,19 +4142,43 @@ import {
         cutChartCell(index, "small_hole_overburn_mm", row.small_hole_overburn_mm, "0.1"),
         cutChartCell(index, "small_hole_torch_off_before_end_mm", row.small_hole_torch_off_before_end_mm, "0.1")
       );
-      tr.addEventListener("click", () => {
+      const selectRow = () => {
+        const currentRow = activeCutChartRows()[index];
+        if (!currentRow) return;
         const history = captureMutationHistory();
-        controls.thickness.value = row.thickness_mm;
-        controls.nozzle.value = row.nozzle_mm;
+        controls.thickness.value = currentRow.thickness_mm;
+        controls.nozzle.value = currentRow.nozzle_mm;
         controls.feedMode.value = "auto";
         syncProjectFromControls();
+        invalidateSimulation();
+        gcodeEl.value = "";
         saveProject();
         pushHistoryState(history, "Cut settings");
         draw();
         validateProject();
+      };
+      const actionCell = document.createElement("td");
+      const selectButton = document.createElement("button");
+      selectButton.type = "button";
+      selectButton.textContent = "Выбрать";
+      selectButton.setAttribute("aria-label", `Выбрать режим, строка ${index + 1}`);
+      selectButton.addEventListener("click", event => {
+        event.stopPropagation();
+        selectRow();
       });
+      actionCell.appendChild(selectButton);
+      tr.appendChild(actionCell);
+      tr.addEventListener("click", selectRow);
       body.appendChild(tr);
     }
+    updateCutChartInfo();
+    if (project) {
+      markActiveCutChartRow(project.cut);
+      if (refresh) refreshCutSettings();
+    }
+  }
+
+  function updateCutChartInfo() {
     if (cutChartInfoEl) {
       const chart = project && project.cut_chart ? project.cut_chart : cutChartProfile;
       cutChartInfoEl.textContent = chart
@@ -4146,9 +4188,6 @@ import {
             chart.version ? `Version ${chart.version}` : null,
           ].filter(Boolean).join("\n")
         : "Starter chart";
-    }
-    if (project) {
-      refreshCutSettings();
     }
   }
 
@@ -4160,6 +4199,9 @@ import {
     input.step = step;
     input.min = "0";
     input.value = value === null || value === undefined ? "" : String(value);
+    input.dataset.field = field;
+    const column = cellFieldLabel(field);
+    input.setAttribute("aria-label", `Строка ${index + 1}: ${column}`);
     input.addEventListener("click", (event) => event.stopPropagation());
     input.addEventListener("change", () => {
       const nextValue = field === "arc_voltage_v" && input.value === "" ? null : Number(input.value);
@@ -4169,12 +4211,20 @@ import {
     return cell;
   }
 
+  function cellFieldLabel(field) {
+    const fields = ["thickness_mm", "nozzle_mm", "current_a", "feed_rate_mm_min", "kerf_width_mm", "pierce_delay_s", "cut_height_mm", "arc_voltage_v", "thc_enabled", "small_hole_threshold_mm", "small_shape_threshold_mm", "small_hole_speed_percent", "small_hole_overburn_mm", "small_hole_torch_off_before_end_mm"];
+    const heading = cutChartTableEl.querySelectorAll("thead th")[fields.indexOf(field)];
+    return heading ? [...heading.childNodes].map(node => node.nodeName === "BR" ? " " : node.textContent).join("").trim() : field;
+  }
+
   function cutChartCheckboxCell(index, checked) {
     const cell = document.createElement("td");
     const input = document.createElement("input");
     input.className = "table-check";
     input.type = "checkbox";
     input.checked = Boolean(checked);
+    input.dataset.field = "thc_enabled";
+    input.setAttribute("aria-label", `Строка ${index + 1}: THC`);
     input.addEventListener("click", (event) => event.stopPropagation());
     input.addEventListener("change", () => updateCutChartCell(index, "thc_enabled", input.checked));
     cell.appendChild(input);
@@ -4735,11 +4785,26 @@ import {
   window.addEventListener("resize", draw);
   document.getElementById("workspaceReloadBtn").addEventListener("click", () => sharedWorkspace.resolve(false));
   document.getElementById("workspaceKeepLocalBtn").addEventListener("click", () => sharedWorkspace.resolve(true));
+  document.getElementById("settingsReloadBtn").addEventListener("click", () => sharedWorkspace.resolve(false));
+  document.getElementById("settingsKeepLocalBtn").addEventListener("click", () => sharedWorkspace.resolve(true));
   document.getElementById("localProjectBackupBtn").addEventListener("click", () => {
     const raw = localStorage.getItem(migrationBackupKey);
     if (raw) downloadText("kerfgrid-before-shared.kerfgrid.json", raw, "application/json");
   });
 
+  setupSettingsDialog({
+    dialog: settingsDialogEl,
+    onOpen() {
+      spacePan = false;
+      finishPanning();
+      updatePanCursor();
+      renderCutChart({ refresh: false });
+    },
+    onClose() {
+      commitPendingControlHistory("Settings");
+      sharedWorkspace.refresh();
+    },
+  });
   setupTabs();
   loadCutChart();
   loadInitialProject();
